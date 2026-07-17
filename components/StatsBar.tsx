@@ -1,7 +1,6 @@
 "use client";
 
 import type { B20Stats } from "@/lib/types";
-import { formatAmount } from "@/lib/b20-client";
 
 interface StatsBarProps {
   stats: B20Stats;
@@ -9,56 +8,75 @@ interface StatsBarProps {
 }
 
 export default function StatsBar({ stats, blockHeight }: StatsBarProps) {
-  const statItems = [
-    {
-      label: "Total B20 Tokens",
-      value: stats.totalTokens.toString(),
-      icon: "🪙",
-      color: "from-[#0052FF] to-[#0052FF]/60",
-    },
-    {
-      label: "Assets",
-      value: stats.totalAssetTokens.toString(),
-      icon: "📊",
-      color: "from-purple-500 to-purple-500/60",
-    },
-    {
-      label: "Stablecoins",
-      value: stats.totalStablecoinTokens.toString(),
-      icon: "💵",
-      color: "from-green-500 to-green-500/60",
-    },
-    {
-      label: "Block Height",
-      value: blockHeight.toLocaleString(),
-      icon: "📦",
-      color: "from-cyan-500 to-cyan-500/60",
-    },
-  ];
-
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
-      {statItems.map((item) => (
-        <div
-          key={item.label}
-          className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-all hover:border-white/20 hover:bg-white/[0.06]"
-        >
-          {/* Gradient accent line */}
-          <div
-            className={`absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r ${item.color}`}
-          />
-
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{item.icon}</span>
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              {item.label}
-            </span>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* Total Tokens */}
+      <div className="glass-card group p-3.5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#3B82F6]/10">
+            <svg className="h-3 w-3 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-          <p className="text-2xl font-bold text-white tabular-nums">
-            {item.value}
-          </p>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Total Tokens
+          </span>
         </div>
-      ))}
+        <p className="text-xl font-bold text-white tabular-nums tracking-tight">
+          {stats.totalTokens}
+        </p>
+      </div>
+
+      {/* Assets */}
+      <div className="glass-card group p-3.5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-500/10">
+            <svg className="h-3 w-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Assets
+          </span>
+        </div>
+        <p className="text-xl font-bold text-white tabular-nums tracking-tight">
+          {stats.totalAssetTokens}
+        </p>
+      </div>
+
+      {/* Stablecoins */}
+      <div className="glass-card group p-3.5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-green-500/10">
+            <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Stablecoins
+          </span>
+        </div>
+        <p className="text-xl font-bold text-white tabular-nums tracking-tight">
+          {stats.totalStablecoinTokens}
+        </p>
+      </div>
+
+      {/* Block Height */}
+      <div className="glass-card group p-3.5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-500/10">
+            <svg className="h-3 w-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+            Block Height
+          </span>
+        </div>
+        <p className="text-xl font-bold text-white tabular-nums tracking-tight">
+          {blockHeight.toLocaleString()}
+        </p>
+      </div>
     </div>
   );
 }

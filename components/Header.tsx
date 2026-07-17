@@ -9,28 +9,37 @@ interface HeaderProps {
 
 export default function Header({ searchQuery, onSearchChange }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0D0D0D]/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-        {/* Logo & Title */}
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0052FF] text-white font-bold text-sm">
-            B20
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">
-              B20 Tracker
-            </h1>
-            <p className="text-[10px] text-gray-500 -mt-0.5 tracking-wide uppercase">
-              Base Mainnet
-            </p>
-          </div>
-        </Link>
+    <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#0B0E17]/80 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6">
+        {/* Left: Logo & Network */}
+        <div className="flex items-center gap-4">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#3B82F6] to-[#1D4ED8] text-white font-bold text-xs shadow-lg shadow-blue-500/20">
+              B20
+            </div>
+            <div className="hidden sm:block">
+              <h1 className="text-sm font-bold text-white tracking-tight">
+                B20 Tracker
+              </h1>
+            </div>
+          </Link>
 
-        {/* Search Bar */}
+          {/* Network Badge */}
+          <div className="network-badge hidden sm:flex">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-60"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+            </span>
+            Base Mainnet
+          </div>
+        </div>
+
+        {/* Right: Search + Live */}
         <div className="flex items-center gap-3">
+          {/* Search */}
           <div className="relative">
             <svg
-              className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+              className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -44,20 +53,22 @@ export default function Header({ searchQuery, onSearchChange }: HeaderProps) {
             </svg>
             <input
               type="text"
-              placeholder="Search token name, symbol, or address..."
+              placeholder="Search tokens..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-64 rounded-lg border border-white/10 bg-white/5 px-4 py-2 pl-9 text-sm text-white placeholder-gray-500 outline-none transition-all focus:border-[#0052FF]/50 focus:bg-white/10 focus:ring-1 focus:ring-[#0052FF]/30 sm:w-80"
+              className="w-44 rounded-lg border border-white/[0.08] bg-[#1A2335] px-3 py-2 pl-9 text-sm text-white placeholder-gray-500 outline-none transition-all focus:w-56 focus:border-[#3B82F6]/40 focus:ring-1 focus:ring-[#3B82F6]/20 sm:w-56 sm:focus:w-64"
             />
           </div>
 
-          {/* Live indicator */}
-          <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1 border border-green-500/20">
-            <div className="relative flex h-2 w-2">
+          {/* Live Indicator */}
+          <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1">
+            <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
-            </div>
-            <span className="text-xs font-medium text-green-400">LIVE</span>
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse-dot"></span>
+            </span>
+            <span className="text-[10px] font-semibold text-green-400 tracking-wider uppercase hidden sm:inline">
+              Live
+            </span>
           </div>
         </div>
       </div>
