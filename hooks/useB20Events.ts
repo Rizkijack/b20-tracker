@@ -7,7 +7,7 @@ import {
   getCurrentBlockNumber,
   getBlockTimestamp,
 } from "@/lib/api-client";
-import { decodeTransferEvent } from "@/lib/event-decoder";
+import { decodeAnyEvent } from "@/lib/event-decoder";
 import {
   POLLING_INTERVAL,
   MAX_LIVE_EVENTS,
@@ -39,7 +39,7 @@ export function useB20Events() {
 
       const decodedEvents: B20Event[] = [];
       for (const log of logs) {
-        const event = decodeTransferEvent(log);
+        const event = decodeAnyEvent(log);
         if (!event) continue;
         if (knownIdsRef.current.has(event.id)) continue;
         knownIdsRef.current.add(event.id);

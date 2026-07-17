@@ -23,7 +23,7 @@ export const B20VariantLabels: Record<number, string> = {
   [B20Variant.STABLECOIN]: "Stablecoin",
 };
 
-// ─── B20 Roles ──────────────────────────────────────────────────────────────
+// ─── B20 Roles (keccak256 hashes of role names) ──────────────────────────────
 export const B20Roles = {
   DEFAULT_ADMIN_ROLE: "0x0000000000000000000000000000000000000000000000000000000000000000",
   MINT_ROLE: "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8c984a6e7297", // keccak256("MINT_ROLE")
@@ -46,32 +46,41 @@ export const B20RoleLabels: Record<string, string> = {
   [B20Roles.OPERATOR_ROLE]: "Operator",
 };
 
-// ─── Event Topic Hashes ────────────────────────────────────────────────────
+// ─── Event Topic Hashes (keccak256 of event signatures) ─────────────────────
+// Computed using ethers.id() — indexed params omitted from signature
 export const EVENT_TOPICS = {
-  // Standard ERC-20 Transfer (also used by B20)
+  // Standard ERC-20 Transfer — also used by B20
+  // Transfer(address indexed from, address indexed to, uint256 value)
+  // From=0x0 → mint, To=0x0 → burn (no separate Mint/Burn events)
   TRANSFER: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
 
+  // OpenZeppelin Pausable
+  // Paused(address account)
+  PAUSED: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+
+  // Unpaused(address account)
+  UNPAUSED: "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa",
+
+  // OpenZeppelin AccessControl
+  // RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+  ROLE_GRANTED: "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d",
+
+  // RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+  ROLE_REVOKED: "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b",
+
   // B20-specific events
-  MEMO: "0x4a39406426e4f3f4a4f3e4a3e4e4b4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a", // placeholder - actual hash computed at runtime
-  MINT: "0x0000000000000000000000000000000000000000000000000000000000000001", // placeholder
-  BURN: "0x0000000000000000000000000000000000000000000000000000000000000002", // placeholder
+  // SupplyCapUpdated(uint256 oldCap, uint256 newCap)
+  SUPPLY_CAP_UPDATED: "0xb4d96b3a6638191d0f6aefa0fdc4d99af3592f4c97480e31feeb977723c63b53",
 
-  // Access control
-  ROLE_GRANTED: "0x2f2ff15d57a19c8794bc3a7a6792cd106bb05270a3a3c1a56a5f45f07ba1b5d9",
-  ROLE_REVOKED: "0x853828b6f12d8421f092f0a3f7e10ae7e932e0a86e9a9ca67a7eb827e95c1e48",
+  // PolicyUpdated(address indexed policy, bool indexed enabled)
+  POLICY_UPDATED: "0x24ac5fff0e5892def17518933250c7d272c0298563d12393522b0b653e928ee9",
 
-  // Supply
-  SUPPLY_CAP_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000003", // placeholder
+  // Memo(uint256 indexed id, string memo)
+  MEMO: "0x1ac03619c3cd8038349dc82d4190eb6ed901d9e08e60dbab3bfdbee0a153cec7",
 
-  // Pause
-  PAUSED: "0x0000000000000000000000000000000000000000000000000000000000000004", // placeholder
-  UNPAUSED: "0x0000000000000000000000000000000000000000000000000000000000000005", // placeholder
-
-  // Policy
-  POLICY_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000006", // placeholder
-
-  // Factory
-  B20_CREATED: "0x0000000000000000000000000000000000000000000000000000000000000007", // placeholder
+  // B20Factory
+  // B20Created(uint8 variant, address indexed creator, address indexed token, bytes32 salt)
+  B20_CREATED: "0x981ebffa6c2d7329a02948ec363b890f5a1e1e370bd6414de9ba2bb7b350d78d",
 } as const;
 
 // ─── Minimal ABIs ────────────────────────────────────────────────────────────

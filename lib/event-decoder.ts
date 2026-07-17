@@ -1,12 +1,341 @@
 import { id } from "ethers";
-import type { B20Event } from "./types";
+import type { B20Event, B20EventType } from "./types";
 import { truncateAddress } from "./b20-client";
 
 // ─── Event Topic Hashes (computed at runtime) ───────────────────────────────
-const TRANSFER_TOPIC = id("Transfer(address,address,uint256)");
-const B20_CREATED_TOPIC = id("B20Created(uint8,address,address,bytes32)");
+export const TOPICS = {
+  TRANSFER: id("Transfer(address,address,uint256)"),
+  PAUSED: id("Paused(address)"),
+  UNPAUSED: id("Unpaused(address)"),
+  ROLE_GRANTED: id("RoleGranted(bytes32,address,address)"),
+  ROLE_REVOKED: id("RoleRevoked(bytes32,address,address)"),
+  SUPPLY_CAP_UPDATED: id("SupplyCapUpdated(uint256,uint256)"),
+  POLICY_UPDATED: id("PolicyUpdated(address,bool)"),
+  MEMO: id("Memo(uint256,string)"),
+  B20_CREATED: id("B20Created(uint8,address,address,bytes32)"),
+} as const;
 
-// ─── Decode B20Created event from log ───────────────────────────────────────
+// ─── Generic decode: detect event type from topic[0] ────────────────────────
+export function decodeAnyEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  address?: string;
+}): B20Event | null {
+  const topic0 = log.topics[0];
+  if (!topic0) return null;
+
+  try {
+    if (topic0 === TOPICS.TRANSFER) {
+      return decodeTransferEvent(log as Parameters<typeof decodeTransferEvent>[0]);
+    }
+    if (topic0 === TOPICS.PAUSED) return decodePauseEvent(log);
+    if (topic0 === TOPICS.UNPAUSED) return decodeUnpauseEvent(log);
+    if (topic0 === TOPICS.ROLE_GRANTED) return decodeRoleEvent(log, "role_granted");
+    if (topic0 === TOPICS.ROLE_REVOKED) return decodeRoleEvent(log, "role_revoked");
+    if (topic0 === TOPICS.SUPPLY_CAP_UPDATED) return decodeSupplyCapEvent(log);
+    if (topic0 === TOPICS.POLICY_UPDATED) return decodePolicyEvent(log);
+    if (topic0 === TOPICS.MEMO) return decodeMemoEvent(log);
+    if (topic0 === TOPICS.B20_CREATED) return decodeB20CreatedAsEvent(log);
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+// ─── Transfer / Mint / Burn decoder ─────────────────────────────────────────
+export function decodeTransferEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  address: string;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.TRANSFER) return null;
+  if (log.topics.length < 3) return null;
+
+  try {
+    const from = "0x" + log.topics[1].slice(log.topics[1].length - 40);
+    const to = "0x" + log.topics[2].slice(log.topics[2].length - 40);
+    const amount = BigInt(log.data || "0x0");
+
+    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+    let type: B20EventType = "transfer";
+    if (from.toLowerCase() === ZERO_ADDRESS) type = "mint";
+    else if (to.toLowerCase() === ZERO_ADDRESS) type = "burn";
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type,
+      tokenAddress: log.address,
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      from,
+      to,
+      amount,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Paused decoder ─────────────────────────────────────────────────────────
+// event Paused(address account)
+export function decodePauseEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.PAUSED) return null;
+  try {
+    const account = log.topics[1]
+      ? "0x" + log.topics[1].slice(log.topics[1].length - 40)
+      : "0x" + log.data.slice(log.data.length - 40);
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "pause",
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      account,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Unpaused decoder ───────────────────────────────────────────────────────
+// event Unpaused(address account)
+export function decodeUnpauseEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.UNPAUSED) return null;
+  try {
+    const account = log.topics[1]
+      ? "0x" + log.topics[1].slice(log.topics[1].length - 40)
+      : "0x" + log.data.slice(log.data.length - 40);
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "unpause",
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      account,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── RoleGranted / RoleRevoked decoder ──────────────────────────────────────
+// event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
+// event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
+export function decodeRoleEvent(
+  log: {
+    topics: string[];
+    data: string;
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+  },
+  type: "role_granted" | "role_revoked"
+): B20Event | null {
+  const targetTopic = type === "role_granted" ? TOPICS.ROLE_GRANTED : TOPICS.ROLE_REVOKED;
+  if (log.topics[0] !== targetTopic) return null;
+  if (log.topics.length < 4) return null;
+
+  try {
+    // topics[1] = role (bytes32, indexed)
+    const role = log.topics[1];
+    // topics[2] = account (address, indexed)
+    const account = "0x" + log.topics[2].slice(log.topics[2].length - 40);
+    // topics[3] = sender (address, indexed)
+    const sender = "0x" + log.topics[3].slice(log.topics[3].length - 40);
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type,
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      role,
+      account,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── SupplyCapUpdated decoder ───────────────────────────────────────────────
+// event SupplyCapUpdated(uint256 oldCap, uint256 newCap)
+export function decodeSupplyCapEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.SUPPLY_CAP_UPDATED) return null;
+
+  try {
+    // Both params are non-indexed, encoded in data
+    // oldCap = bytes 0-31, newCap = bytes 32-63
+    const oldCap = BigInt(log.data ? "0x" + log.data.slice(2, 66) : "0x0");
+    const newCap = BigInt(log.data ? "0x" + log.data.slice(66, 130) : "0x0");
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "supply_cap_updated",
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      oldCap,
+      newCap,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── PolicyUpdated decoder ──────────────────────────────────────────────────
+// event PolicyUpdated(address indexed policy, bool indexed enabled)
+export function decodePolicyEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.POLICY_UPDATED) return null;
+  if (log.topics.length < 3) return null;
+
+  try {
+    // topics[1] = policy (address, indexed)
+    const policy = "0x" + log.topics[1].slice(log.topics[1].length - 40);
+    // topics[2] = enabled (bool, indexed)
+    // bool is padded to 32 bytes, last byte is the value
+    const enabledHex = log.topics[2].slice(-2);
+    const enabled = parseInt(enabledHex, 16) === 1;
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "policy_updated",
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      memo: `${enabled ? "Enabled" : "Disabled"} policy: ${policy}`,
+      from: policy,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Memo decoder ──────────────────────────────────────────────────────────
+// event Memo(uint256 indexed id, string memo)
+export function decodeMemoEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.MEMO) return null;
+
+  try {
+    // topics[1] = id (uint256, indexed)
+    const memoId = BigInt(log.topics[1] || "0x0").toString();
+
+    // Decode string from data: offset + length + content
+    // First 32 bytes = offset to string data (always 32 for tightly packed)
+    // Next 32 bytes = string length
+    // Rest = string content
+    let memoText = "";
+    try {
+      const offset = parseInt(log.data.slice(2, 66), 16);
+      const stringDataStart = 2 + offset * 2; // offset in bytes → hex chars
+      const length = parseInt(log.data.slice(stringDataStart, stringDataStart + 64), 16);
+      const content = log.data.slice(stringDataStart + 64, stringDataStart + 64 + length * 2);
+      // Browser-compatible hex-to-string (no Buffer dependency)
+      memoText = "";
+      for (let i = 0; i < content.length; i += 2) {
+        const code = parseInt(content.substring(i, i + 2), 16);
+        if (code >= 0x20 && code <= 0x7e) {
+          memoText += String.fromCharCode(code);
+        }
+      }
+    } catch {
+      memoText = "";
+    }
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "memo",
+      tokenAddress: "",
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      memo: `#${memoId} ${memoText}`.trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── B20Created → B20Event adapter ─────────────────────────────────────────
+export function decodeB20CreatedAsEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): B20Event | null {
+  if (log.topics[0] !== TOPICS.B20_CREATED) return null;
+  try {
+    const creator = "0x" + log.topics[1].slice(log.topics[1].length - 40);
+    const tokenAddress = "0x" + log.topics[2].slice(log.topics[2].length - 40);
+    const variantHex = log.data.slice(2 + 62, 2 + 64);
+    const variant = parseInt(variantHex, 16);
+
+    return {
+      id: `${log.txHash}-${log.logIndex}`,
+      type: "b20_created",
+      tokenAddress,
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+      timestamp: 0,
+      creator,
+      variant: isNaN(variant) ? 0 : variant,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── B20Created raw decoder (used by sidebar widget) ────────────────────────
 export function decodeB20CreatedEvent(log: {
   topics: string[];
   data: string;
@@ -22,19 +351,13 @@ export function decodeB20CreatedEvent(log: {
   txHash: string;
   logIndex: number;
 } | null {
-  if (log.topics[0] !== B20_CREATED_TOPIC) return null;
-
+  if (log.topics[0] !== TOPICS.B20_CREATED) return null;
   try {
-    // B20Created(uint8 variant, address creator, address token, bytes32 salt)
-    // topics[1] = creator (indexed), topics[2] = token (indexed)
-    // data: variant (uint8, padded to 32 bytes) + salt (bytes32)
     const creator = "0x" + log.topics[1].slice(log.topics[1].length - 40);
     const tokenAddress = "0x" + log.topics[2].slice(log.topics[2].length - 40);
-
-    // Decode data: first 32 bytes = variant (uint8), next 32 bytes = salt (bytes32)
-    const variantHex = log.data.slice(2 + 62, 2 + 64); // last 2 hex chars of first 32 bytes
+    const variantHex = log.data.slice(2 + 62, 2 + 64);
     const variant = parseInt(variantHex, 16);
-    const salt = "0x" + log.data.slice(2 + 64, 2 + 128); // next 32 bytes
+    const salt = "0x" + log.data.slice(2 + 64, 2 + 128);
 
     return {
       creator,
@@ -50,54 +373,8 @@ export function decodeB20CreatedEvent(log: {
   }
 }
 
-// ─── Decode Transfer event from log ─────────────────────────────────────────
-export function decodeTransferEvent(log: {
-  topics: string[];
-  data: string;
-  blockNumber: number;
-  txHash: string;
-  logIndex: number;
-  address: string;
-}): B20Event | null {
-  if (log.topics[0] !== TRANSFER_TOPIC) return null;
-  if (log.topics.length < 3) return null;
+// ─── Event display helpers ──────────────────────────────────────────────────
 
-  try {
-    // topics[1] = from (indexed), topics[2] = to (indexed)
-    const from = "0x" + log.topics[1].slice(log.topics[1].length - 40);
-    const to = "0x" + log.topics[2].slice(log.topics[2].length - 40);
-
-    // data = amount (uint256, non-indexed)
-    const amount = BigInt(log.data);
-
-    // Determine event type: mint (from=0x0), burn (to=0x0), or transfer
-    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    let type: B20Event["type"] = "transfer";
-
-    if (from.toLowerCase() === ZERO_ADDRESS) {
-      type = "mint";
-    } else if (to.toLowerCase() === ZERO_ADDRESS) {
-      type = "burn";
-    }
-
-    return {
-      id: `${log.txHash}-${log.logIndex}`,
-      type,
-      tokenAddress: log.address,
-      blockNumber: log.blockNumber,
-      txHash: log.txHash,
-      logIndex: log.logIndex,
-      timestamp: 0, // filled later by fetcher
-      from,
-      to,
-      amount,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ─── Build event display text ──────────────────────────────────────────────
 export function getEventDescription(event: B20Event): string {
   switch (event.type) {
     case "transfer":
@@ -107,15 +384,17 @@ export function getEventDescription(event: B20Event): string {
     case "burn":
       return `Burned from ${truncateAddress(event.from ?? "")}`;
     case "pause":
-      return "Token paused";
+      return `Paused by ${truncateAddress(event.account ?? "")}`;
     case "unpause":
-      return "Token unpaused";
+      return `Unpaused by ${truncateAddress(event.account ?? "")}`;
     case "role_granted":
       return `Role granted to ${truncateAddress(event.account ?? "")}`;
     case "role_revoked":
       return `Role revoked from ${truncateAddress(event.account ?? "")}`;
     case "supply_cap_updated":
       return "Supply cap updated";
+    case "policy_updated":
+      return "Policy updated";
     case "b20_created":
       return `New B20 token by ${truncateAddress(event.creator ?? "")}`;
     case "memo":
@@ -125,8 +404,7 @@ export function getEventDescription(event: B20Event): string {
   }
 }
 
-// ─── Get event type badge color ────────────────────────────────────────────
-export function getEventBadgeColor(type: B20Event["type"]): string {
+export function getEventBadgeColor(type: B20EventType): string {
   switch (type) {
     case "transfer":
       return "bg-blue-500/20 text-blue-400 border border-blue-500/30";
@@ -155,8 +433,7 @@ export function getEventBadgeColor(type: B20Event["type"]): string {
   }
 }
 
-// ─── Get event type icon ────────────────────────────────────────────────────
-export function getEventIcon(type: B20Event["type"]): string {
+export function getEventIcon(type: B20EventType): string {
   switch (type) {
     case "transfer": return "⇄";
     case "mint": return "⊕";
@@ -173,8 +450,7 @@ export function getEventIcon(type: B20Event["type"]): string {
   }
 }
 
-// ─── Get event type label ───────────────────────────────────────────────────
-export function getEventLabel(type: B20Event["type"]): string {
+export function getEventLabel(type: B20EventType): string {
   switch (type) {
     case "transfer": return "Transfer";
     case "mint": return "Mint";

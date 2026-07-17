@@ -7,6 +7,28 @@ export const dynamic = "force-dynamic";
 export const preferredRegion = ["iad1"];
 const CHUNK_SIZE = 2000;
 
+// All B20 event topic hashes (computed at compile-time for the server)
+const TRANSFER_TOPIC = id("Transfer(address,address,uint256)");
+const PAUSED_TOPIC = id("Paused(address)");
+const UNPAUSED_TOPIC = id("Unpaused(address)");
+const ROLE_GRANTED_TOPIC = id("RoleGranted(bytes32,address,address)");
+const ROLE_REVOKED_TOPIC = id("RoleRevoked(bytes32,address,address)");
+const SUPPLY_CAP_TOPIC = id("SupplyCapUpdated(uint256,uint256)");
+const POLICY_UPDATED_TOPIC = id("PolicyUpdated(address,bool)");
+const MEMO_TOPIC = id("Memo(uint256,string)");
+
+// All B20-relevant topics combined for OR-matching
+const B20_EVENT_TOPICS = [
+  TRANSFER_TOPIC,
+  PAUSED_TOPIC,
+  UNPAUSED_TOPIC,
+  ROLE_GRANTED_TOPIC,
+  ROLE_REVOKED_TOPIC,
+  SUPPLY_CAP_TOPIC,
+  POLICY_UPDATED_TOPIC,
+  MEMO_TOPIC,
+];
+
 export async function GET(request: NextRequest) {
   const fromBlock = parseInt(request.nextUrl.searchParams.get("fromBlock") || "");
   const toBlock = parseInt(request.nextUrl.searchParams.get("toBlock") || "");
@@ -21,7 +43,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const provider = getProvider();
-    const transferTopic = id("Transfer(address,address,uint256)");
     const allLogs: { topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number; address: string }[] = [];
 
     for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
@@ -30,7 +51,7 @@ export async function GET(request: NextRequest) {
         const logs = await provider.getLogs({
           fromBlock: start,
           toBlock: end,
-          topics: [transferTopic],
+          topics: [B20_EVENT_TOPICS], // OR-match on any B20 event topic
         });
 
         for (const log of logs) {
