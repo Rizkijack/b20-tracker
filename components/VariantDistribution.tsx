@@ -8,7 +8,6 @@ interface VariantDistributionProps {
 }
 
 export default function VariantDistribution({ data, totalTokens }: VariantDistributionProps) {
-  // Calculate SVG donut chart
   const size = 140;
   const strokeWidth = 24;
   const radius = (size - strokeWidth) / 2;
@@ -24,28 +23,26 @@ export default function VariantDistribution({ data, totalTokens }: VariantDistri
   });
 
   return (
-    <div className="glass-card p-5">
+    <div className="glass-card p-5" role="region" aria-label="Token variant distribution">
       <div>
-        <h3 className="text-sm font-semibold text-white">Token Variants</h3>
-        <p className="text-[10px] text-gray-500 mt-0.5">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Token Variants</h3>
+        <p className="text-[10px] mt-0.5" style={{ color: "var(--text-tertiary)" }}>
           Asset vs Stablecoin distribution
         </p>
       </div>
 
       <div className="flex flex-col items-center mt-4">
         {/* SVG Donut */}
-        <div className="relative">
-          <svg width={size} height={size} className="-rotate-90">
-            {/* Background circle */}
+        <div className="relative" role="img" aria-label={`Token distribution: ${data.map(d => `${d.name} ${d.percentage}%`).join(", ")}`}>
+          <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
             <circle
               cx={center}
               cy={center}
               r={radius}
               fill="none"
-              stroke="rgba(255,255,255,0.05)"
+              stroke="var(--border-subtle)"
               strokeWidth={strokeWidth}
             />
-            {/* Segments */}
             {segments.map((seg) => (
               <circle
                 key={seg.name}
@@ -64,11 +61,11 @@ export default function VariantDistribution({ data, totalTokens }: VariantDistri
           </svg>
 
           {/* Center text */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold text-white tabular-nums">
+          <div className="absolute inset-0 flex flex-col items-center justify-center" aria-hidden="true">
+            <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
               {totalTokens}
             </span>
-            <span className="text-[10px] text-gray-500">Total</span>
+            <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>Total</span>
           </div>
         </div>
 
@@ -77,14 +74,15 @@ export default function VariantDistribution({ data, totalTokens }: VariantDistri
           {data.map((item) => (
             <div key={item.name} className="flex items-center gap-2">
               <span
-                className="h-3 w-3 rounded-full"
+                className="h-3 w-3 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
+                aria-hidden="true"
               ></span>
               <div>
-                <p className="text-xs text-gray-400">{item.name}</p>
-                <p className="text-sm font-bold text-white tabular-nums">
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{item.name}</p>
+                <p className="text-sm font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
                   {item.value}
-                  <span className="text-[10px] text-gray-500 font-normal ml-1">
+                  <span className="text-[10px] font-normal ml-1" style={{ color: "var(--text-tertiary)" }}>
                     ({item.percentage}%)
                   </span>
                 </p>

@@ -19,10 +19,10 @@ export default function AnalyticsPage() {
   const hasError = tokensError || eventsError;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0B0E17]">
+    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--bg-body)" }}>
       <Header searchQuery="" onSearchChange={() => {}} />
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6">
+      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6" aria-label="Analytics dashboard content">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 mb-5">
           <Link href="/" className="text-xs text-gray-500 hover:text-white transition-colors">

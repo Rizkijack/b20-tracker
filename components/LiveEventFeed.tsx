@@ -48,8 +48,10 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
   const [tokenMeta, setTokenMeta] = useState<Record<string, { symbol: string; decimals: number }>>({});
   const prevEventCount = useRef(0);
   const resolvedRef = useRef<Set<string>>(new Set());
+  const latestEventRef = useRef<string>("");
+  const liveRegionRef = useRef<HTMLDivElement>(null);
 
-  // Resolve token metadata for events (with caching)
+  // Resolve token names for events (with caching)
   useEffect(() => {
     const resolveMeta = async () => {
       const batch: Record<string, { symbol: string; decimals: number }> = {};
@@ -70,6 +72,22 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
     resolveMeta();
   }, [events]);
 
+  // Track latest event for screen reader
+  useEffect(() => {
+    if (events.length > 0 && events[0]?.id !== latestEventRef.current) {
+      latestEventRef.current = events[0]?.id || "";
+      const event = events[0];
+      if (event) {
+        const meta = tokenMeta[event.tokenAddress];
+        const name = meta?.symbol || truncateAddress(event.tokenAddress, 4);
+        const announce = `${getEventLabel(event.type)}: ${name} - ${getEventDescription(event)}`;
+        if (liveRegionRef.current) {
+          liveRegionRef.current.textContent = announce;
+        }
+      }
+    }
+  }, [events, tokenMeta]);
+
   // Auto-scroll to top on new events
   useEffect(() => {
     if (feedRef.current && events.length > prevEventCount.current) {
@@ -79,20 +97,28 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
   }, [events.length]);
 
   return (
-    <div className="glass-card overflow-hidden">
+    <div className="glass-card overflow-hidden" role="region" aria-label="Live event feed">
+      {/* Hidden live region for screen readers */}
+      <div
+        ref={liveRegionRef}
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      ></div>
+
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <span className="relative flex h-2 w-2">
+          <span className="relative flex h-2 w-2" aria-hidden="true">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
             <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
           </span>
-          <h2 className="text-sm font-semibold text-white">Live Event Feed</h2>
-          <span className="text-[11px] text-gray-500 font-mono">
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Live Event Feed</h2>
+          <span className="text-[11px] font-mono" style={{ color: "var(--text-tertiary)" }} aria-label={`${events.length} events tracked`}>
             {events.length}
           </span>
         </div>
-        <span className="text-[10px] text-gray-500 uppercase tracking-[0.06em]">
+        <span className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "var(--text-tertiary)" }}>
           Latest
         </span>
       </div>
@@ -101,34 +127,39 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
       {events.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.03] mb-3">
-            <svg className="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-6 w-6" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
           </div>
-          <p className="text-sm text-gray-400">Listening for B20 events...</p>
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Listening for B20 events...</p>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
             Events will appear here in real-time
           </p>
         </div>
       ) : (
         <div
           ref={feedRef}
-          className="h-[480px] overflow-y-auto scrollbar-custom divide-y divide-white/[0.04]"
+          className="h-[480px] overflow-y-auto scrollbar-custom divide-y divide-[var(--border-subtle)]"
+          role="log"
+          aria-label="Recent events log"
+          aria-live="off"
         >
           {events.map((event, index) => (
             <div
               key={event.id}
-              className={`animate-slide-in px-4 py-2.5 transition-colors hover:bg-white/[0.02] ${
-                index === 0 ? "bg-[#3B82F6]/[0.02]" : ""
+              className={`animate-slide-in px-4 py-2.5 transition-colors hover:bg-[var(--accent-blue-dim)] ${
+                index === 0 ? "bg-[var(--accent-blue-dim)]" : ""
               }`}
+              role="article"
+              aria-label={`${getEventLabel(event.type)} event - ${tokenMeta[event.tokenAddress]?.symbol || truncateAddress(event.tokenAddress, 4)}`}
             >
               <div className="flex items-start gap-3">
-                {/* Event icon */}
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-[11px] shrink-0 mt-0.5">
+                {/* Icon */}
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-[11px] shrink-0 mt-0.5" aria-hidden="true">
                   {getEventIcon(event.type)}
                 </div>
 
-                {/* Event content */}
+                {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
@@ -137,27 +168,27 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
                       {getEventLabel(event.type)}
                     </span>
 
-                  {/* Token name link */}
-                  {isB20Address(event.tokenAddress) && (
-                    <Link
-                      href={`/token/${event.tokenAddress}`}
-                      className="text-[11px] font-semibold text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      {tokenMeta[event.tokenAddress]?.symbol || truncateAddress(event.tokenAddress, 4)}
-                    </Link>
-                  )}
+                    {/* Token name link */}
+                    {isB20Address(event.tokenAddress) && (
+                      <Link
+                        href={`/token/${event.tokenAddress}`}
+                        className="text-[11px] font-semibold text-[var(--accent-blue)] hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50"
+                        aria-label={`View ${tokenMeta[event.tokenAddress]?.symbol || truncateAddress(event.tokenAddress, 4)} details`}
+                      >
+                        {tokenMeta[event.tokenAddress]?.symbol || truncateAddress(event.tokenAddress, 4)}
+                      </Link>
+                    )}
 
-                    <span className="text-[11px] text-gray-500 truncate">
+                    <span className="text-[11px] truncate" style={{ color: "var(--text-tertiary)" }}>
                       {getEventDescription(event)}
                     </span>
                   </div>
 
                   {/* Meta row */}
                   <div className="flex items-center gap-3 mt-1">
-                    {/* Amount */}
                     {event.amount && event.amount > BigInt(0) && (
-                      <span className="text-[11px] font-mono text-gray-400 tabular-nums">
-                        <span className={event.type === "mint" ? "text-green-400" : event.type === "burn" ? "text-red-400" : ""}>
+                      <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                        <span className={event.type === "mint" ? "text-[var(--accent-green)]" : event.type === "burn" ? "text-[var(--accent-red)]" : ""}>
                           {event.type === "mint" ? "+" : event.type === "burn" ? "-" : ""}
                           {tokenMeta[event.tokenAddress]
                             ? formatTokenAmount(event.amount, tokenMeta[event.tokenAddress].decimals)
@@ -166,23 +197,22 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
                       </span>
                     )}
 
-                    {/* Time */}
-                    <span className="text-[10px] text-gray-600 font-mono tabular-nums" title={formatTime(event.timestamp)}>
+                    <span className="text-[10px] font-mono tabular-nums" style={{ color: "var(--text-muted)" }} title={formatTime(event.timestamp)}>
                       {formatTimeAgo(event.timestamp)}
                     </span>
 
-                    {/* Tx Link */}
                     <a
                       href={`${EXPLORER_URL}/tx/${event.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] text-gray-600 hover:text-blue-400 font-mono transition-colors"
+                      className="text-[10px] font-mono transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50"
+                      style={{ color: "var(--text-muted)" }}
+                      aria-label={`View transaction ${truncateAddress(event.txHash, 3)} on Basescan`}
                     >
                       {truncateAddress(event.txHash, 3)}
                     </a>
 
-                    {/* Block number */}
-                    <span className="text-[10px] text-gray-600 font-mono">
+                    <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
                       #{event.blockNumber}
                     </span>
                   </div>

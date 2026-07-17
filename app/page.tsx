@@ -20,10 +20,10 @@ export default function DashboardPage() {
   const latestBlock = Math.max(tokenBlock, eventBlock);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0B0E17]">
+    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--bg-body)" }}>
       <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6">
+      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6">
         {/* Hero Section */}
         <div className="mb-6">
           <div className="flex items-center gap-3">
@@ -31,10 +31,10 @@ export default function DashboardPage() {
               B20
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white sm:text-xl tracking-tight">
-                B20 Token <span className="text-blue-400">Dashboard</span>
+              <h2 className="text-lg font-bold sm:text-xl tracking-tight" style={{ color: "var(--text-primary)" }}>
+                B20 Token <span style={{ color: "var(--accent-blue)" }}>Dashboard</span>
               </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
                 Real-time tracker for Base&apos;s native token standard
               </p>
             </div>
