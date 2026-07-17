@@ -4,7 +4,8 @@ import { getProvider } from "@/lib/b20-server";
 import { B20_TOKEN_ABI } from "@/lib/constants";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
-export const dynamic = "force-dynamic"; // always run on the server
+export const dynamic = "force-dynamic";
+export const preferredRegion = ["iad1"]; // US East (closest to Base RPC)
 
 export async function GET(request: NextRequest) {
   const address = request.nextUrl.searchParams.get("address");

@@ -3,6 +3,7 @@ import { getProvider } from "@/lib/b20-server";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
 export const dynamic = "force-dynamic";
+export const preferredRegion = ["iad1"];
 
 export async function GET(request: NextRequest) {
   const blockNumber = parseInt(request.nextUrl.searchParams.get("blockNumber") || "");

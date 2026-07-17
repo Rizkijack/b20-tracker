@@ -4,6 +4,7 @@ import { getProvider, isB20Address } from "@/lib/b20-server";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
 export const dynamic = "force-dynamic";
+export const preferredRegion = ["iad1"];
 const CHUNK_SIZE = 2000;
 
 export async function GET(request: NextRequest) {

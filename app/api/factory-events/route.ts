@@ -5,6 +5,7 @@ import { B20_FACTORY_ADDRESS } from "@/lib/constants";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
 export const dynamic = "force-dynamic";
+export const preferredRegion = ["iad1"];
 
 // Compute the B20Created event signature hash at runtime
 // Based on B20 factory spec: event B20Created(uint8 variant, address creator, address token, bytes32 salt)

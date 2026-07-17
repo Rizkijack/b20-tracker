@@ -1,48 +1,58 @@
-// Simple in-memory cache with TTL for server-side RPC responses
-// Works within a single server instance (dev, single-VM deploy)
+// RPC Cache — dual layer: shared (KV/Redis) + in-memory
+// In serverless environments, shared KV enables cache sharing across functions.
+// In single-instance dev, falls back to in-memory transparently.
 
-interface CacheEntry<T> {
+import {
+  sharedCacheGet,
+  sharedCacheSet,
+  cacheKey as sharedCacheKey,
+  TTL as SharedTTL,
+} from "./shared-cache";
+
+// Re-export the consistent API
+export const cacheKey = sharedCacheKey;
+export const TTL = SharedTTL;
+
+export async function cacheGet<T>(key: string): Promise<T | undefined> {
+  const result = await sharedCacheGet<T>(key);
+  return result ?? undefined;
+}
+
+export function cacheSet<T>(key: string, data: T, ttlMs: number): void {
+  // Fire-and-forget — never block the request
+  sharedCacheSet(key, data, ttlMs).catch(() => {});
+}
+
+// Synchronous in-memory-only fallback for hot-path reads
+// (sharedCacheGet already populates this, so hot reads are instant)
+
+// Local in-memory store for sync hot-path reads
+interface LocalEntry<T> {
   data: T;
   expiresAt: number;
 }
 
-const store = new Map<string, CacheEntry<unknown>>();
+const localStore = new Map<string, LocalEntry<unknown>>();
 
-const CLEANUP_INTERVAL = 60_000; // clean expired entries every 60s
-
-// Periodic cleanup
 if (typeof setInterval !== "undefined") {
   setInterval(() => {
     const now = Date.now();
-    for (const [key, entry] of store) {
-      if (entry.expiresAt < now) store.delete(key);
+    for (const [key, entry] of localStore) {
+      if (entry.expiresAt < now) localStore.delete(key);
     }
-  }, CLEANUP_INTERVAL);
+  }, 60_000);
 }
 
-export function cacheGet<T>(key: string): T | undefined {
-  const entry = store.get(key) as CacheEntry<T> | undefined;
+export function cacheGetSync<T>(key: string): T | undefined {
+  const entry = localStore.get(key) as LocalEntry<T> | undefined;
   if (!entry) return undefined;
   if (entry.expiresAt < Date.now()) {
-    store.delete(key);
+    localStore.delete(key);
     return undefined;
   }
   return entry.data;
 }
 
-export function cacheSet<T>(key: string, data: T, ttlMs: number): void {
-  store.set(key, { data, expiresAt: Date.now() + ttlMs });
+export function cacheSetSync<T>(key: string, data: T, ttlMs: number): void {
+  localStore.set(key, { data, expiresAt: Date.now() + ttlMs } as LocalEntry<unknown>);
 }
-
-export function cacheKey(...parts: (string | number)[]): string {
-  return parts.join(":");
-}
-
-// TTL constants (in milliseconds)
-export const TTL = {
-  BLOCK_NUMBER: 2_000,      // 2 seconds
-  BLOCK_TIMESTAMP: 60_000,  // 1 minute (immutable)
-  TOKEN_METADATA: 30_000,   // 30 seconds (rarely changes)
-  TOKEN_DISCOVERY: 10_000,  // 10 seconds
-  TOKEN_EVENTS: 2_000,      // 2 seconds (near real-time)
-};
