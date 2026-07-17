@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import type { B20Event, B20Token } from "@/lib/types";
+import type { B20Event, B20Token, CreatedTokenInfo } from "@/lib/types";
 import { truncateAddress } from "@/lib/b20-client";
 import { computeAnalytics } from "@/lib/analytics";
-import { getEventBadgeColor, getEventLabel } from "@/lib/event-decoder";
+import { getEventBadgeColor, getEventLabel, decodeB20CreatedEvent } from "@/lib/event-decoder";
+import { fetchFactoryCreatedEvents, getCurrentBlockNumber, fetchTokenMetadata } from "@/lib/api-client";
 
 interface SidebarWidgetsProps {
   events: B20Event[];
@@ -22,6 +23,61 @@ function formatTimeAgo(timestamp: number): string {
 }
 
 export default function SidebarWidgets({ events, tokens }: SidebarWidgetsProps) {
+  // ── Recently Created Tokens ────────────────────────────────────
+  const [recentlyCreated, setRecentlyCreated] = useState<CreatedTokenInfo[]>([]);
+  const createdResolvedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const fetchCreated = async () => {
+      try {
+        const latestBlock = await getCurrentBlockNumber();
+        const fromBlock = Math.max(0, latestBlock - 43200); // ~24 hours of blocks (2s each)
+        const logs = await fetchFactoryCreatedEvents(fromBlock, latestBlock);
+
+        const decoded: CreatedTokenInfo[] = [];
+        for (const log of logs) {
+          const event = decodeB20CreatedEvent(log);
+          if (!event) continue;
+          decoded.push({
+            address: event.tokenAddress,
+            creator: event.creator,
+            variant: event.variant,
+            salt: event.salt,
+            blockNumber: event.blockNumber,
+            txHash: event.txHash,
+            logIndex: event.logIndex,
+            timestamp: 0,
+          });
+        }
+
+        // Sort newest first
+        decoded.sort((a, b) => b.blockNumber - a.blockNumber);
+
+        // Resolve token names for the first few (with caching)
+        const enriched: CreatedTokenInfo[] = [];
+        for (const item of decoded.slice(0, 5)) {
+          if (createdResolvedRef.current.has(item.address)) {
+            enriched.push(item);
+            continue;
+          }
+          createdResolvedRef.current.add(item.address);
+          try {
+            const meta = await fetchTokenMetadata(item.address);
+            enriched.push({ ...item, name: meta.name, symbol: meta.symbol });
+          } catch {
+            enriched.push(item);
+          }
+        }
+
+        setRecentlyCreated(enriched);
+      } catch {
+        // silently fail
+      }
+    };
+
+    fetchCreated();
+  }, []);
+
   const analytics = useMemo(() => computeAnalytics(events, tokens), [events, tokens]);
   const { hourlyActivity } = analytics;
   const maxCount = Math.max(...hourlyActivity.map((h) => h.count), 1);
@@ -174,6 +230,55 @@ export default function SidebarWidgets({ events, tokens }: SidebarWidgetsProps) 
                 </span>
                 <span className="text-[9px] font-mono tabular-nums shrink-0" style={{ color: "var(--text-muted)" }}>
                   {formatTimeAgo(event.timestamp)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Recently Created Tokens ────────────────────────────── */}
+      <div className="glass-card p-4" role="region" aria-label="Recently created tokens">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Recently Created</h3>
+          <span className="text-[10px] font-mono tabular-nums" style={{ color: "var(--text-tertiary)" }}>
+            {recentlyCreated.length > 0 ? `${recentlyCreated.length} new` : "24h"}
+          </span>
+        </div>
+
+        {recentlyCreated.length === 0 ? (
+          <div className="flex items-center gap-2 py-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-blue-dim)]">
+              <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" style={{ color: "var(--accent-blue)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </div>
+            <span className="text-[10px]" style={{ color: "var(--text-tertiary)" }}>No new tokens in 24h</span>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {recentlyCreated.map((item, idx) => (
+              <Link
+                key={`${item.txHash}-${item.logIndex}`}
+                href={`/token/${item.address}`}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors hover:bg-[var(--accent-blue-dim)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50"
+                aria-label={`Token created: ${item.symbol || truncateAddress(item.address, 4)}`}
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-[var(--accent-blue-dim)] shrink-0" aria-hidden="true">
+                  <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--accent-blue)" }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                    {item.symbol || truncateAddress(item.address, 4)}
+                  </p>
+                  <p className="text-[8px] font-mono truncate" style={{ color: "var(--text-muted)" }}>
+                    {item.name || truncateAddress(item.address, 6)}
+                  </p>
+                </div>
+                <span className="text-[9px] font-mono tabular-nums shrink-0" style={{ color: "var(--text-muted)" }}>
+                  #{idx + 1}
                 </span>
               </Link>
             ))}

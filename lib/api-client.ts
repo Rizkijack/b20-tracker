@@ -114,3 +114,15 @@ export async function fetchTokenEvents(
     `/api/token-events?address=${encodeURIComponent(tokenAddress)}&fromBlock=${fromBlock}&toBlock=${toBlock}`,
   );
 }
+
+// ─── Fetch B20Created events from factory ─────────────────────────────────
+// Returns raw logs that need to be decoded client-side
+
+export async function fetchFactoryCreatedEvents(
+  fromBlock: number,
+  toBlock: number,
+): Promise<{ topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number }[]> {
+  return fetchApi<{ topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number }[]>(
+    `/api/factory-events?fromBlock=${fromBlock}&toBlock=${toBlock}`,
+  );
+}

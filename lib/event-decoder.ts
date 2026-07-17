@@ -4,6 +4,51 @@ import { truncateAddress } from "./b20-client";
 
 // ─── Event Topic Hashes (computed at runtime) ───────────────────────────────
 const TRANSFER_TOPIC = id("Transfer(address,address,uint256)");
+const B20_CREATED_TOPIC = id("B20Created(uint8,address,address,bytes32)");
+
+// ─── Decode B20Created event from log ───────────────────────────────────────
+export function decodeB20CreatedEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+}): {
+  creator: string;
+  tokenAddress: string;
+  variant: number;
+  salt: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+} | null {
+  if (log.topics[0] !== B20_CREATED_TOPIC) return null;
+
+  try {
+    // B20Created(uint8 variant, address creator, address token, bytes32 salt)
+    // topics[1] = creator (indexed), topics[2] = token (indexed)
+    // data: variant (uint8, padded to 32 bytes) + salt (bytes32)
+    const creator = "0x" + log.topics[1].slice(log.topics[1].length - 40);
+    const tokenAddress = "0x" + log.topics[2].slice(log.topics[2].length - 40);
+
+    // Decode data: first 32 bytes = variant (uint8), next 32 bytes = salt (bytes32)
+    const variantHex = log.data.slice(2 + 62, 2 + 64); // last 2 hex chars of first 32 bytes
+    const variant = parseInt(variantHex, 16);
+    const salt = "0x" + log.data.slice(2 + 64, 2 + 128); // next 32 bytes
+
+    return {
+      creator,
+      tokenAddress,
+      variant: isNaN(variant) ? 0 : variant,
+      salt,
+      blockNumber: log.blockNumber,
+      txHash: log.txHash,
+      logIndex: log.logIndex,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ─── Decode Transfer event from log ─────────────────────────────────────────
 export function decodeTransferEvent(log: {

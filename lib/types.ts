@@ -90,3 +90,16 @@ export interface TokenDetail {
   roles: RoleAssignment[];
   holders: TokenHolder[];
 }
+
+export interface CreatedTokenInfo {
+  address: string;
+  creator: string;
+  variant: number;
+  salt: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  timestamp: number;
+  name?: string;
+  symbol?: string;
+}
