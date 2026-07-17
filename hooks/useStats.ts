@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { B20Stats } from "@/lib/types";
-import { formatNumber } from "@/lib/b20-client";
-import { getCurrentBlockNumber } from "@/lib/b20-client";
+import { getCurrentBlockNumber } from "@/lib/api-client";
 
 export function useStats(tokens: {
   address: string;

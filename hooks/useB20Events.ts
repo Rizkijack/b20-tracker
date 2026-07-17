@@ -6,8 +6,7 @@ import {
   fetchRecentB20Transfers,
   getCurrentBlockNumber,
   getBlockTimestamp,
-  isB20Address,
-} from "@/lib/b20-client";
+} from "@/lib/api-client";
 import { decodeTransferEvent } from "@/lib/event-decoder";
 import {
   POLLING_INTERVAL,

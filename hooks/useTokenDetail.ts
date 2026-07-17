@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { B20Event } from "@/lib/types";
-import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/b20-client";
+import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/api-client";
 import { decodeTransferEvent } from "@/lib/event-decoder";
 
 export function useTokenDetail(tokenAddress: string) {

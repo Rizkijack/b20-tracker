@@ -5,10 +5,10 @@ import type { B20Token } from "@/lib/types";
 import {
   discoverB20Tokens,
   fetchTokenMetadata,
-  detectVariant,
   getCurrentBlockNumber,
   getBlockTimestamp,
-} from "@/lib/b20-client";
+} from "@/lib/api-client";
+import { detectVariant } from "@/lib/b20-client-utils";
 import { POLLING_INTERVAL, MAX_TOKEN_DISCOVERY_BATCH } from "@/lib/constants";
 
 // Estimate B20 activation block (~June 26, 2025)

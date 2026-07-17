@@ -6,9 +6,9 @@ import type { B20Event } from "@/lib/types";
 import {
   truncateAddress,
   isB20Address,
-  fetchTokenMetadata,
   formatAmount as formatTokenAmount,
-} from "@/lib/b20-client";
+} from "@/lib/b20-client-utils";
+import { fetchTokenMetadata } from "@/lib/api-client";
 import {
   getEventBadgeColor,
   getEventIcon,
