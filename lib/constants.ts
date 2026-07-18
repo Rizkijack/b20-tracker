@@ -8,8 +8,25 @@ export const POLICY_REGISTRY_ADDRESS = "0x84530000000000000000000000000000000000
 // All B20 token addresses are deterministically derived and share this prefix
 export const B20_ADDRESS_PREFIX = "0xB20f";
 
-// ─── Base Mainnet RPC ──────────────────────────────────────────────────────
-export const BASE_MAINNET_RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || "https://mainnet.base.org";
+// ─── Base Mainnet RPC (server-side) ──────────────────────────────────────
+// Server code MUST read BASE_RPC_URL (never exposed to the browser).
+// NEXT_PUBLIC_BASE_RPC_URL is only a client-side fallback for the public endpoint.
+// We also support a comma-separated list of RPC URLs for rotation on rate limits.
+const SERVER_RPC = process.env.BASE_RPC_URL;
+const CLIENT_RPC =
+  process.env.NEXT_PUBLIC_BASE_RPC_URL || "https://mainnet.base.org";
+
+const RAW_RPC_LIST = (SERVER_RPC || CLIENT_RPC)
+  .split(",")
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+export const BASE_RPC_URLS: string[] = RAW_RPC_LIST.length
+  ? RAW_RPC_LIST
+  : ["https://mainnet.base.org"];
+
+// Primary RPC used by the singleton provider (server context).
+export const BASE_MAINNET_RPC = BASE_RPC_URLS[0];
 
 // ─── B20 Variant enum ───────────────────────────────────────────────────────
 export const B20Variant = {

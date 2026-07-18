@@ -2,12 +2,37 @@
 
 import Link from "next/link";
 import type { B20Token } from "@/lib/types";
-import { formatAmount, truncateAddress } from "@/lib/b20-client";
+import { formatAmount, formatNumber, truncateAddress } from "@/lib/b20-client";
 import { EXPLORER_URL } from "@/lib/constants";
 
 interface TokenListProps {
   tokens: B20Token[];
   searchQuery: string;
+}
+
+/**
+ * Format a USD number with K/M/B suffixes for compact display.
+ * Returns null for missing/invalid values so caller can show "—".
+ */
+function fmtUsd(n: number | null | undefined): string | null {
+  if (n == null || Number.isNaN(n)) return null;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  if (n === 0) return "$0";
+  if (n < 0.0001) return `$${n.toExponential(2)}`;
+  if (n < 1) return `$${n.toFixed(6)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * Format 24h price change with sign and 2-decimal precision.
+ */
+function fmtChange(n: number | null | undefined): { text: string; isUp: boolean } | null {
+  if (n == null || Number.isNaN(n)) return null;
+  const isUp = n >= 0;
+  const sign = isUp ? "+" : "";
+  return { text: `${sign}${n.toFixed(2)}%`, isUp };
 }
 
 export default function TokenList({ tokens, searchQuery }: TokenListProps) {
@@ -32,6 +57,12 @@ export default function TokenList({ tokens, searchQuery }: TokenListProps) {
           </span>
         </h2>
         <div className="flex items-center gap-2">
+          {tokens.some((t) => t.marketData) && (
+            <span className="flex items-center gap-1 text-[10px] text-gray-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+              live market
+            </span>
+          )}
           <span className="text-xs text-gray-500">
             Sorted by most recent
           </span>
@@ -113,6 +144,38 @@ export default function TokenList({ tokens, searchQuery }: TokenListProps) {
                   Total Supply
                 </p>
               </div>
+
+              {/* Market Data (price + 24h change + MCap) */}
+              {(() => {
+                const md = token.marketData;
+                const price = fmtUsd(md?.priceUsd);
+                const chg = fmtChange(md?.priceChange24h);
+                const mcap = fmtUsd(md?.marketCap);
+                if (!md) return null;
+                return (
+                  <div className="text-right hidden md:block min-w-[110px]">
+                    <p className="text-sm font-semibold text-white tabular-nums">
+                      {price ?? "—"}
+                    </p>
+                    <p
+                      className={`text-[10px] tabular-nums ${
+                        chg
+                          ? chg.isUp
+                            ? "text-green-400"
+                            : "text-red-400"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {chg ? chg.text : "—"}
+                    </p>
+                    {mcap && (
+                      <p className="text-[10px] text-gray-500 tabular-nums">
+                        MCap {mcap}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Arrow */}
               <svg

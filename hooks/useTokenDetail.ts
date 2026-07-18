@@ -1,9 +1,28 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { B20Event } from "@/lib/types";
+import type { B20Event, TokenMarketData } from "@/lib/types";
 import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/b20-client";
 import { decodeTransferEvent } from "@/lib/event-decoder";
+
+// Market data refresh cadence for token detail page (more aggressive than list view)
+const MARKET_REFRESH_MS = 15_000;
+
+/**
+ * Fetch market data for a single token via the server-side API route.
+ * Best-effort: returns null on failure so UI can show "—" placeholders.
+ */
+async function fetchMarketData(address: string): Promise<TokenMarketData | null> {
+  try {
+    const res = await fetch(`/api/market?address=${address}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as TokenMarketData;
+  } catch {
+    return null;
+  }
+}
 
 export function useTokenDetail(tokenAddress: string) {
   const [metadata, setMetadata] = useState<{
@@ -14,6 +33,7 @@ export function useTokenDetail(tokenAddress: string) {
     currency?: string;
   } | null>(null);
   const [events, setEvents] = useState<B20Event[]>([]);
+  const [marketData, setMarketData] = useState<TokenMarketData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,9 +41,13 @@ export function useTokenDetail(tokenAddress: string) {
     try {
       setLoading(true);
 
-      // Fetch metadata
-      const meta = await fetchTokenMetadata(tokenAddress);
+      // Fetch metadata + market data in parallel
+      const [meta, market] = await Promise.all([
+        fetchTokenMetadata(tokenAddress),
+        fetchMarketData(tokenAddress),
+      ]);
       setMetadata(meta);
+      setMarketData(market);
 
       // Fetch recent events (last 5000 blocks ≈ ~2.8 hours)
       const currentBlock = await getCurrentBlockNumber();
@@ -111,5 +135,20 @@ export function useTokenDetail(tokenAddress: string) {
     return () => clearInterval(interval);
   }, [tokenAddress, events.length]);
 
-  return { metadata, events, loading, error, refetch: fetchDetail };
+  // Poll MARKET DATA every 15s (separate cadence from metadata/events)
+  useEffect(() => {
+    if (!tokenAddress) return;
+
+    const refreshMarket = async () => {
+      const market = await fetchMarketData(tokenAddress);
+      if (market) setMarketData(market);
+    };
+
+    // Run once immediately, then on 15s cadence
+    refreshMarket();
+    const marketInterval = setInterval(refreshMarket, MARKET_REFRESH_MS);
+    return () => clearInterval(marketInterval);
+  }, [tokenAddress]);
+
+  return { metadata, events, marketData, loading, error, refetch: fetchDetail };
 }

@@ -1,21 +1,40 @@
-import { JsonRpcProvider, Contract, Interface, id } from "ethers";
+import { JsonRpcProvider, Contract, id } from "ethers";
 import {
-  BASE_MAINNET_RPC,
-  B20_FACTORY_ADDRESS,
+  BASE_RPC_URLS,
   B20_TOKEN_ABI,
   B20_ADDRESS_PREFIX,
   B20Variant,
 } from "./constants";
-import type { B20Token, B20Event } from "./types";
+import { cacheGet, cacheSet, TTL } from "./server-cache";
 
-// Singleton provider
-let provider: JsonRpcProvider | null = null;
+// Singleton provider(s) — one per configured RPC URL for rotation on rate limits.
+const providers: JsonRpcProvider[] = BASE_RPC_URLS.map(
+  (url) => new JsonRpcProvider(url, 8453), // Base chainId
+);
+
+let providerCursor = 0;
+function nextProvider(): JsonRpcProvider {
+  const p = providers[providerCursor % providers.length];
+  providerCursor = (providerCursor + 1) % providers.length;
+  return p;
+}
 
 export function getProvider(): JsonRpcProvider {
-  if (!provider) {
-    provider = new JsonRpcProvider(BASE_MAINNET_RPC, 8453); // Base chainId
+  return providers[0];
+}
+
+// Run an RPC call against providers with rotation + retry on transient failures.
+async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < providers.length * 2; attempt++) {
+    const p = nextProvider();
+    try {
+      return await fn(p);
+    } catch (err) {
+      lastErr = err;
+    }
   }
-  return provider;
+  throw lastErr;
 }
 
 // ─── Helper: Check if address is a B20 token ───────────────────────────────
@@ -51,15 +70,26 @@ export function formatNumber(num: number): string {
 
 // ─── Helper: Get block timestamp ────────────────────────────────────────────
 export async function getBlockTimestamp(blockNumber: number): Promise<number> {
-  const provider = getProvider();
-  const block = await provider.getBlock(blockNumber);
-  return block ? block.timestamp : Math.floor(Date.now() / 1000);
+  const cacheKey = `blk:${blockNumber}`;
+  const cached = await cacheGet<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  const block = await rpcCall((p) => p.getBlock(blockNumber));
+  const ts = block ? block.timestamp : Math.floor(Date.now() / 1000);
+  await cacheSet(cacheKey, ts, TTL.BLOCK);
+  return ts;
 }
 
 // ─── Helper: Get current block number ──────────────────────────────────────
 export async function getCurrentBlockNumber(): Promise<number> {
-  const provider = getProvider();
-  return await provider.getBlockNumber();
+  const cached = await cacheGet<number>("block:latest");
+  if (cached !== null) return cached;
+
+  const blockNumber = await rpcCall((p) => p.getBlockNumber());
+  // Block height changes every ~2s; short TTL keeps us fresh without
+  // hammering the RPC on every poll.
+  await cacheSet("block:latest", blockNumber, TTL.BLOCK);
+  return blockNumber;
 }
 
 // ─── Fetch token metadata ───────────────────────────────────────────────────
@@ -70,6 +100,25 @@ export async function fetchTokenMetadata(address: string): Promise<{
   totalSupply: bigint;
   currency?: string;
 }> {
+  const cacheKey = `meta:${address.toLowerCase()}`;
+  const cached = await cacheGet<{
+    name: string;
+    symbol: string;
+    decimals: number;
+    totalSupply: string;
+    currency?: string;
+  }>(cacheKey);
+
+  if (cached) {
+    return {
+      name: cached.name,
+      symbol: cached.symbol,
+      decimals: cached.decimals,
+      totalSupply: BigInt(cached.totalSupply),
+      currency: cached.currency,
+    };
+  }
+
   const provider = getProvider();
   const contract = new Contract(address, B20_TOKEN_ABI, provider);
 
@@ -88,13 +137,15 @@ export async function fetchTokenMetadata(address: string): Promise<{
       // Not a stablecoin, currency() will revert
     }
 
-    return {
+    const result = {
       name: name || "Unknown",
       symbol: symbol || "???",
       decimals: Number(decimals) || 18,
       totalSupply: totalSupply ?? BigInt(0),
       currency,
     };
+    await cacheSet(cacheKey, { ...result, totalSupply: result.totalSupply.toString() }, TTL.TOKEN_METADATA);
+    return result;
   } catch {
     return {
       name: "Unknown",
@@ -122,9 +173,6 @@ export async function discoverB20Tokens(
   fromBlock: number,
   toBlock: number,
 ): Promise<{ address: string; blockNumber: number; txHash: string }[]> {
-  const provider = getProvider();
-
-  // Use Transfer event topic to find all token activity
   const transferTopic = id("Transfer(address,address,uint256)");
 
   // Scan in chunks of 2000 blocks (Base has 2-second blocks)
@@ -135,11 +183,13 @@ export async function discoverB20Tokens(
   for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
     const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
     try {
-      const logs = await provider.getLogs({
-        fromBlock: start,
-        toBlock: end,
-        topics: [transferTopic],
-      });
+      const logs = await rpcCall((p) =>
+        p.getLogs({
+          fromBlock: start,
+          toBlock: end,
+          topics: [transferTopic],
+        }),
+      );
 
       for (const log of logs) {
         const addr = log.address.toLowerCase();
@@ -166,16 +216,17 @@ export async function fetchTokenEvents(
   fromBlock: number,
   toBlock: number,
 ): Promise<{ topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number }[]> {
-  const provider = getProvider();
   const transferTopic = id("Transfer(address,address,uint256)");
 
   try {
-    const logs = await provider.getLogs({
-      fromBlock,
-      toBlock,
-      address: tokenAddress,
-      topics: [transferTopic],
-    });
+    const logs = await rpcCall((p) =>
+      p.getLogs({
+        fromBlock,
+        toBlock,
+        address: tokenAddress,
+        topics: [transferTopic],
+      }),
+    );
 
     return logs.map((log) => ({
       topics: [...log.topics],
@@ -194,7 +245,6 @@ export async function fetchRecentB20Transfers(
   fromBlock: number,
   toBlock: number,
 ): Promise<{ topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number; address: string }[]> {
-  const provider = getProvider();
   const transferTopic = id("Transfer(address,address,uint256)");
 
   const CHUNK_SIZE = 2000;
@@ -203,11 +253,13 @@ export async function fetchRecentB20Transfers(
   for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
     const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
     try {
-      const logs = await provider.getLogs({
-        fromBlock: start,
-        toBlock: end,
-        topics: [transferTopic],
-      });
+      const logs = await rpcCall((p) =>
+        p.getLogs({
+          fromBlock: start,
+          toBlock: end,
+          topics: [transferTopic],
+        }),
+      );
 
       for (const log of logs) {
         if (isB20Address(log.address)) {

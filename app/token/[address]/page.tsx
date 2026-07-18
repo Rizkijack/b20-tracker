@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useTokenDetail } from "@/hooks/useTokenDetail";
-import { truncateAddress, formatAmount, isB20Address } from "@/lib/b20-client";
+import { truncateAddress, formatAmount, formatNumber, isB20Address } from "@/lib/b20-client";
 import {
   getEventBadgeColor,
   getEventIcon,
@@ -16,7 +16,7 @@ export default function TokenDetailPage() {
   const params = useParams();
   const address = (params.address as string)?.toLowerCase();
 
-  const { metadata, events, loading, error } = useTokenDetail(address);
+  const { metadata, events, marketData, loading, error } = useTokenDetail(address);
 
   const formatTime = (timestamp: number) => {
     if (!timestamp) return "...";
@@ -163,6 +163,84 @@ export default function TokenDetailPage() {
                   <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Events Tracked</p>
                   <p className="mt-1 text-lg font-bold text-white tabular-nums">{events.length}</p>
                 </div>
+              </div>
+
+              {/* Market Data Overlay (server-aggregated) */}
+              <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-white">Market Data</h2>
+                  {marketData?.sourcePriority && marketData.sourcePriority.length > 0 ? (
+                    <span className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                      {marketData.sourcePriority.join(", ")}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-gray-600">no market source</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Price (USD)</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.priceUsd != null ? `$${marketData.priceUsd.toLocaleString()}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">24h Change</p>
+                    <p className={`mt-1 text-lg font-bold tabular-nums ${marketData?.priceChange24h != null ? (marketData.priceChange24h >= 0 ? "text-green-400" : "text-red-400") : "text-white"}`}>
+                      {marketData?.priceChange24h != null ? `${marketData.priceChange24h >= 0 ? "+" : ""}${marketData.priceChange24h.toFixed(2)}%` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Market Cap</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.marketCap != null ? `$${formatNumber(marketData.marketCap)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Liquidity</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.liquidityUsd != null ? `$${formatNumber(marketData.liquidityUsd)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">24h Volume</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.volume24h != null ? `$${formatNumber(marketData.volume24h)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">FDV</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.fdv != null ? `$${formatNumber(marketData.fdv)}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">24h Txns</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.txns24h ? `${marketData.txns24h.buys}/${marketData.txns24h.sells}` : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Holders (24h)</p>
+                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                      {marketData?.holders != null ? marketData.holders.toLocaleString() : "—"}
+                    </p>
+                  </div>
+                </div>
+                {marketData?.dexUrl && (
+                  <a
+                    href={marketData.dexUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/10 hover:text-white transition-all"
+                  >
+                    View on DEX
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                )}
               </div>
             </div>
 

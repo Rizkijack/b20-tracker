@@ -9,34 +9,22 @@
 // • Consistent return shape regardless of which sources are configured
 
 import type { TokenMarketData, MarketDataSource } from "./types";
+import { cacheGet, cacheSet, TTL } from "./server-cache";
 
 const BASE_CHAIN_ID = 8453;
 const BASE_CHAIN_SLUG = "base";
 
-// ─── In-memory cache ─────────────────────────────────────────────────────────
-interface CacheEntry {
-  data: TokenMarketData;
-  ts: number;
-}
-const _cache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 30_000; // 30 s fresh cache
-
+// ─── Persistent cross-instance cache (see lib/server-cache.ts) ──────────────
 function _cacheKey(address: string): string {
-  return address.toLowerCase();
+  return `mkt:${address.toLowerCase()}`;
 }
 
-function _fromCache(address: string): TokenMarketData | null {
-  const entry = _cache.get(_cacheKey(address));
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) {
-    _cache.delete(_cacheKey(address));
-    return null;
-  }
-  return entry.data;
+async function _fromCache(address: string): Promise<TokenMarketData | null> {
+  return await cacheGet<TokenMarketData>(_cacheKey(address));
 }
 
-function _toCache(address: string, data: TokenMarketData): void {
-  _cache.set(_cacheKey(address), { data, ts: Date.now() });
+async function _toCache(address: string, data: TokenMarketData): Promise<void> {
+  await cacheSet(_cacheKey(address), data, TTL.MARKET);
 }
 
 // ─── Helper: retry with exponential backoff ──────────────────────────────────
@@ -515,7 +503,7 @@ export async function fetchTokenMarketData(
   const normalized = address.toLowerCase();
 
   if (!opts?.skipCache) {
-    const cached = _fromCache(normalized);
+    const cached = await _fromCache(normalized);
     if (cached) return cached;
   }
 
@@ -543,7 +531,7 @@ export async function fetchTokenMarketData(
   const partials = await Promise.all(promises);
   const merged = _mergePartials(normalized, partials);
 
-  _toCache(normalized, merged);
+  await _toCache(normalized, merged);
   return merged;
 }
 
