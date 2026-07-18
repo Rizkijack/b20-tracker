@@ -11,6 +11,7 @@ import { useStats } from "@/hooks/useStats";
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "b20-only">("b20-only");
 
   const { tokens, loading: tokensLoading, error: tokensError, currentBlock: tokenBlock } = useB20Tokens();
   const { events, loading: eventsLoading, error: eventsError, currentBlock: eventBlock } = useB20Events();
@@ -18,6 +19,11 @@ export default function DashboardPage() {
   const { stats, blockHeight } = useStats(tokens);
 
   const latestBlock = Math.max(tokenBlock, eventBlock);
+
+  // Filter tokens based on selected mode
+  const filteredTokens = filterMode === "b20-only"
+    ? tokens.filter((t) => t.marketData != null || t.variant === "asset" || t.variant === "stablecoin")
+    : tokens;
 
   return (
     <div className="flex min-h-screen flex-col bg-background relative selection:bg-[#0052FF]/30">
@@ -34,12 +40,39 @@ export default function DashboardPage() {
       <main className="relative z-10 mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
         {/* Hero Section */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-white sm:text-3xl">
-            B20 Token <span className="gradient-text">Dashboard</span>
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Real-time tracker for Base&apos;s native token standard
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white sm:text-3xl">
+                B20 Token <span className="gradient-text">Dashboard</span>
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Real-time tracker for Base&apos;s native token standard
+              </p>
+            </div>
+            {/* Filter Toggle */}
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+              <button
+                onClick={() => setFilterMode("b20-only")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  filterMode === "b20-only"
+                    ? "bg-[#0052FF] text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                B20 Only
+              </button>
+              <button
+                onClick={() => setFilterMode("all")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  filterMode === "all"
+                    ? "bg-[#0052FF] text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                All Tokens
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Stats Bar */}
@@ -70,7 +103,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-gray-600 mt-1">Checking recent blocks for B20-prefixed addresses</p>
               </div>
             ) : (
-              <TokenList tokens={tokens} searchQuery={searchQuery} />
+              <TokenList tokens={filteredTokens} searchQuery={searchQuery} />
             )}
           </div>
 

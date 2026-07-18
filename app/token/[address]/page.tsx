@@ -12,6 +12,7 @@ import {
 } from "@/lib/event-decoder";
 import { EXPLORER_URL } from "@/lib/constants";
 import PriceChart from "@/components/PriceChart";
+import PriceAlerts from "@/components/PriceAlerts";
 
 export default function TokenDetailPage() {
   const params = useParams();
@@ -178,6 +179,7 @@ export default function TokenDetailPage() {
                   ) : (
                     <span className="text-[10px] text-gray-600">no market source</span>
                   )}
+                </div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
                     <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Price (USD)</p>
@@ -242,6 +244,20 @@ export default function TokenDetailPage() {
                   </a>
                 )}
               </div>
+            </div>
+
+            {/* Historical Price Chart */}
+            <div className="mt-6">
+              <PriceChart address={address} />
+            </div>
+
+            {/* Price Alerts */}
+            <div className="mt-6">
+              <PriceAlerts
+                address={address}
+                symbol={metadata?.symbol || "???"}
+                currentPrice={marketData?.priceUsd ?? null}
+              />
             </div>
 
             {/* Event History */}
