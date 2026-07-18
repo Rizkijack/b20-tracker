@@ -11,6 +11,7 @@ import {
   getEventDescription,
 } from "@/lib/event-decoder";
 import { EXPLORER_URL } from "@/lib/constants";
+import PriceChart from "@/components/PriceChart";
 
 export default function TokenDetailPage() {
   const params = useParams();
@@ -177,7 +178,6 @@ export default function TokenDetailPage() {
                   ) : (
                     <span className="text-[10px] text-gray-600">no market source</span>
                   )}
-                </div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
                     <p className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Price (USD)</p>
