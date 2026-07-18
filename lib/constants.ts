@@ -47,31 +47,33 @@ export const B20RoleLabels: Record<string, string> = {
 };
 
 // ─── Event Topic Hashes ────────────────────────────────────────────────────
+// All hashes are keccak256 of the canonical Solidity event signature.
+// Verified via: ethers.id("<EventSignature>")
 export const EVENT_TOPICS = {
   // Standard ERC-20 Transfer (also used by B20)
-  TRANSFER: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+  TRANSFER: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer(address,address,uint256)
 
   // B20-specific events
-  MEMO: "0x4a39406426e4f3f4a4f3e4a3e4e4b4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a", // placeholder - actual hash computed at runtime
-  MINT: "0x0000000000000000000000000000000000000000000000000000000000000001", // placeholder
-  BURN: "0x0000000000000000000000000000000000000000000000000000000000000002", // placeholder
+  MEMO: "0x19872106a7b684d5d23cb3a2576a0913956657fc74879f0c213c43c6facaf9d1", // Memo(address,address,uint256,string)
+  MINT: "0x0f6798a560793a54c3bcfe86a93cde1e73087d944c0ea20544137d4121396885", // Mint(address,uint256)
+  BURN: "0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5", // Burn(address,uint256)
 
-  // Access control
-  ROLE_GRANTED: "0x2f2ff15d57a19c8794bc3a7a6792cd106bb05270a3a3c1a56a5f45f07ba1b5d9",
-  ROLE_REVOKED: "0x853828b6f12d8421f092f0a3f7e10ae7e932e0a86e9a9ca67a7eb827e95c1e48",
+  // Access control (OpenZeppelin IAccessControl)
+  ROLE_GRANTED: "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d", // RoleGranted(bytes32,address,address)
+  ROLE_REVOKED: "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b", // RoleRevoked(bytes32,address,address)
 
   // Supply
-  SUPPLY_CAP_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000003", // placeholder
+  SUPPLY_CAP_UPDATED: "0xb4d96b3a6638191d0f6aefa0fdc4d99af3592f4c97480e31feeb977723c63b53", // SupplyCapUpdated(uint256,uint256)
 
-  // Pause
-  PAUSED: "0x0000000000000000000000000000000000000000000000000000000000000004", // placeholder
-  UNPAUSED: "0x0000000000000000000000000000000000000000000000000000000000000005", // placeholder
+  // Pause (OpenZeppelin Pausable)
+  PAUSED: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258", // Paused(address)
+  UNPAUSED: "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa", // Unpaused(address)
 
   // Policy
-  POLICY_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000006", // placeholder
+  POLICY_UPDATED: "0x80e82abbe1b482f962c8033b4fa717eb7e0d10ee4e22e78d42b5ba1160220b88", // PolicyUpdated(address,bytes32,bytes)
 
   // Factory
-  B20_CREATED: "0x0000000000000000000000000000000000000000000000000000000000000007", // placeholder
+  B20_CREATED: "0xb0ed61ac10020e747404027a57555bb822d38ff48126cf1d9cf8fed98bbcb762", // B20Created(address,uint8,address,bytes32)
 } as const;
 
 // ─── Minimal ABIs ────────────────────────────────────────────────────────────

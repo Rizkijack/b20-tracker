@@ -4,7 +4,6 @@ import {
   B20_FACTORY_ADDRESS,
   B20_TOKEN_ABI,
   B20_ADDRESS_PREFIX,
-  B20Variant,
 } from "./constants";
 import type { B20Token, B20Event } from "./types";
 
@@ -227,25 +226,4 @@ export async function fetchRecentB20Transfers(
   }
 
   return allLogs;
-}
-
-// ─── Detect token variant from address ─────────────────────────────────────
-// B20 address: [0xB20f prefix (10 bytes)] [variant byte (1 byte)] [bytes9(keccak256(...))]
-export function detectVariant(address: string): "asset" | "stablecoin" {
-  // The variant byte is at position 10 (20th hex char, after 0xB20f = 4 bytes prefix)
-  // Full B20 prefix is 10 bytes = 20 hex chars: 0xB20f0000000000000000000000
-  // Variant is encoded at address[10] position
-  try {
-    const cleaned = address.toLowerCase().replace("0x", "");
-    // B20 addresses: bytes 0-9 are prefix, byte 10 is variant
-    // "b20f00000000000000000000" = 22 hex chars (11 bytes), variant at byte 10 = hex chars 20-21
-    if (cleaned.length >= 22) {
-      const variantHex = cleaned.slice(20, 22);
-      const variantInt = parseInt(variantHex, 16);
-      return variantInt === B20Variant.STABLECOIN ? "stablecoin" : "asset";
-    }
-  } catch {
-    // ignore
-  }
-  return "asset";
 }

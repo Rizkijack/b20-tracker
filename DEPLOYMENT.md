@@ -93,6 +93,36 @@ Setelah deploy pertama, setiap kali Anda `git push` ke branch `main`:
 
 ---
 
+## 💾 Step 4: Setup Persistent Cache (Opsional tapi Direkomendasikan)
+
+B20 Tracker meng-cache daftar token yang sudah ditemukan dan posisi scan di Redis,
+sehingga tidak perlu rescan seluruh blockchain tiap kali halaman dimuat.
+
+### Opsi A: Via Vercel Marketplace (paling mudah)
+
+1. Buka [Vercel Marketplace — Redis](https://vercel.com/marketplace?search=redis)
+2. Pilih **Upstash Redis** → klik **Add Integration**
+3. Pilih project `b20-tracker` Anda
+4. Vercel otomatis menambahkan env vars `KV_REST_API_URL` dan `KV_REST_API_TOKEN`
+5. **Redeploy** project agar env vars aktif
+
+### Opsi B: Via Upstash Console langsung
+
+1. Buka [console.upstash.com](https://console.upstash.com/) → buat akun gratis
+2. Klik **Create Database**
+   - Name: `b20-tracker-cache`
+   - Region: **US East 1** (dekat Vercel `iad1`)
+   - Type: **Regional** (cukup untuk use case ini)
+3. Setelah database dibuat, salin **REST URL** dan **REST Token**
+4. Di Vercel dashboard → project `b20-tracker` → **Settings** → **Environment Variables**:
+   - `KV_REST_API_URL` = REST URL dari Upstash
+   - `KV_REST_API_TOKEN` = REST Token dari Upstash
+5. **Redeploy** project
+
+> 💡 **Free tier Upstash**: 10.000 commands/hari, 256MB storage — lebih dari cukup untuk B20 Tracker.
+
+> ⚠️ **Tanpa Redis**, app tetap berfungsi normal — hanya saja setiap reload akan rescan dari awal (lebih lambat dan membebani RPC).
+
 ## 🎨 Custom Domain (Opsional)
 
 Vercel memberikan subdomain gratis (`*.vercel.app`). Untuk custom domain:

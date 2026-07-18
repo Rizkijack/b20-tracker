@@ -5,7 +5,6 @@ import type { B20Token } from "@/lib/types";
 import {
   discoverB20Tokens,
   fetchTokenMetadata,
-  detectVariant,
   getCurrentBlockNumber,
   getBlockTimestamp,
 } from "@/lib/b20-client";
@@ -15,6 +14,86 @@ import { POLLING_INTERVAL, MAX_TOKEN_DISCOVERY_BATCH } from "@/lib/constants";
 // Base blocks: ~2s per block. June 26, 2025 ≈ block ~25,000,000
 const B20_ACTIVATION_BLOCK = 25000000;
 
+// ─── Cache helpers ──────────────────────────────────────────────────────────
+async function loadCachedScanState(): Promise<{
+  lastScannedBlock: number;
+  tokens: B20Token[];
+} | null> {
+  try {
+    const res = await fetch("/api/scan-state");
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const lastScannedBlock =
+      typeof data.lastScannedBlock === "number" && data.lastScannedBlock > 0
+        ? data.lastScannedBlock
+        : 0;
+
+    // Convert cached token summaries into full B20Token objects
+    const tokens: B20Token[] = Array.isArray(data.tokens)
+      ? data.tokens.map(
+          (t: {
+            address: string;
+            name: string;
+            symbol: string;
+            variant: "asset" | "stablecoin";
+            decimals: number;
+            currency?: string;
+            txHash: string;
+            createdAt: number;
+          }) => ({
+            address: t.address,
+            name: t.name,
+            symbol: t.symbol,
+            variant: t.variant,
+            decimals: t.decimals,
+            currency: t.currency,
+            totalSupply: BigInt(0), // will be refreshed by metadata poller
+            supplyCap: BigInt(0),
+            creator: "",
+            createdAt: t.createdAt,
+            txHash: t.txHash,
+            isPaused: false,
+          }),
+        )
+      : [];
+
+    return { lastScannedBlock, tokens };
+  } catch (err) {
+    console.warn("[useB20Tokens] Failed to load cache, starting fresh:", err);
+    return null;
+  }
+}
+
+async function persistDiscoveries(
+  newTokens: B20Token[],
+  lastScannedBlock: number,
+): Promise<void> {
+  try {
+    // Send only the fields the cache needs (no BigInt — not JSON-serializable)
+    const cacheable = newTokens.map((t) => ({
+      address: t.address,
+      name: t.name,
+      symbol: t.symbol,
+      variant: t.variant,
+      decimals: t.decimals,
+      currency: t.currency,
+      txHash: t.txHash,
+      createdAt: t.createdAt,
+    }));
+
+    await fetch("/api/scan-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newTokens: cacheable, lastScannedBlock }),
+    });
+  } catch (err) {
+    // Non-critical — scan continues even if cache write fails
+    console.warn("[useB20Tokens] Failed to persist discoveries:", err);
+  }
+}
+
+// ─── Hook ───────────────────────────────────────────────────────────────────
 export function useB20Tokens() {
   const [tokens, setTokens] = useState<B20Token[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,8 +101,40 @@ export function useB20Tokens() {
   const [lastScannedBlock, setLastScannedBlock] = useState<number>(B20_ACTIVATION_BLOCK);
   const [currentBlock, setCurrentBlock] = useState<number>(0);
   const discoveredRef = useRef<Set<string>>(new Set());
+  const cacheLoadedRef = useRef(false);
 
+  // ── Load cached state on mount ──────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCache() {
+      const cached = await loadCachedScanState();
+      if (cancelled) return;
+
+      if (cached && cached.lastScannedBlock > B20_ACTIVATION_BLOCK) {
+        // Populate from cache
+        setLastScannedBlock(cached.lastScannedBlock);
+        if (cached.tokens.length > 0) {
+          setTokens(cached.tokens);
+          cached.tokens.forEach((t) =>
+            discoveredRef.current.add(t.address.toLowerCase()),
+          );
+        }
+      }
+
+      cacheLoadedRef.current = true;
+    }
+
+    loadCache();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Discover new tokens (runs after cache is loaded) ──────────────────
   const discoverTokens = useCallback(async () => {
+    if (!cacheLoadedRef.current) return;
+
     try {
       const latestBlock = await getCurrentBlockNumber();
       setCurrentBlock(latestBlock);
@@ -50,7 +161,7 @@ export function useB20Tokens() {
 
         const meta = await fetchTokenMetadata(t.address);
         const timestamp = await getBlockTimestamp(t.blockNumber);
-        const variant = detectVariant(t.address);
+        const variant = meta.currency ? "stablecoin" : "asset";
 
         enriched.push({
           address: t.address,
@@ -78,16 +189,21 @@ export function useB20Tokens() {
         });
       }
 
-      setLastScannedBlock(lastScannedBlock + blocksToScan);
+      const newLastBlock = lastScannedBlock + blocksToScan;
+      setLastScannedBlock(newLastBlock);
       setError(null);
+
+      // Persist to cache (fire-and-forget, only when new tokens found)
+      persistDiscoveries(enriched, newLastBlock);
     } catch (err) {
       console.error("Error discovering B20 tokens:", err);
       setError(err instanceof Error ? err.message : "Failed to discover tokens");
     }
   }, [lastScannedBlock]);
 
-  // Initial discovery
+  // Initial discovery (after cache load)
   useEffect(() => {
+    if (!cacheLoadedRef.current) return;
     discoverTokens().then(() => setLoading(false));
   }, [discoverTokens]);
 
