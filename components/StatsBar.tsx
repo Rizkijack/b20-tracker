@@ -41,20 +41,22 @@ export default function StatsBar({ stats, blockHeight }: StatsBarProps) {
       {statItems.map((item) => (
         <div
           key={item.label}
-          className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-all hover:border-white/20 hover:bg-white/[0.06]"
+          className="group relative overflow-hidden rounded-xl glass-panel p-5 transition-all duration-300 hover:-translate-y-1"
         >
           {/* Gradient accent line */}
           <div
             className={`absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r ${item.color}`}
           />
 
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{item.icon}</span>
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br ${item.color} shadow-lg shadow-black/20`}>
+              <span className="text-xl">{item.icon}</span>
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
               {item.label}
             </span>
           </div>
-          <p className="text-2xl font-bold text-white tabular-nums">
+          <p className="text-3xl font-bold text-white tabular-nums tracking-tight">
             {item.value}
           </p>
         </div>

@@ -20,12 +20,18 @@ export default function DashboardPage() {
   const latestBlock = Math.max(tokenBlock, eventBlock);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0D0D0D]">
+    <div className="flex min-h-screen flex-col bg-background relative selection:bg-[#0052FF]/30">
+      {/* Background ambient glow */}
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[#0052FF]/10 blur-[120px]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-500/10 blur-[120px]" />
+      </div>
+
       {/* Header */}
       <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
       {/* Main Content */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
+      <main className="relative z-10 mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
         {/* Hero Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">

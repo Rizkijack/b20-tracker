@@ -62,7 +62,7 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+    <div className="rounded-xl glass-panel overflow-hidden flex flex-col h-[560px]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
         <div className="flex items-center gap-2">
@@ -89,13 +89,13 @@ export default function LiveEventFeed({ events }: LiveEventFeedProps) {
       ) : (
         <div
           ref={feedRef}
-          className="h-[500px] overflow-y-auto divide-y divide-white/5 scrollbar-thin"
+          className="flex-1 overflow-y-auto divide-y divide-white/5 scrollbar-thin"
         >
           {events.map((event, index) => (
             <div
               key={event.id}
-              className={`flex items-start gap-3 px-4 py-3 transition-all hover:bg-white/[0.03] ${
-                index === 0 ? "bg-[#0052FF]/[0.03]" : ""
+              className={`flex items-start gap-3 px-5 py-3.5 transition-all hover:bg-white/[0.04] ${
+                index === 0 ? "bg-[#0052FF]/[0.05]" : ""
               }`}
             >
               {/* Event icon */}

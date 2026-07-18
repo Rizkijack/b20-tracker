@@ -22,7 +22,7 @@ export default function TokenList({ tokens, searchQuery }: TokenListProps) {
   });
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+    <div className="rounded-xl glass-panel overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
         <h2 className="text-sm font-semibold text-white">
@@ -59,7 +59,7 @@ export default function TokenList({ tokens, searchQuery }: TokenListProps) {
             <Link
               key={token.address}
               href={`/token/${token.address}`}
-              className="flex items-center gap-4 px-5 py-3 transition-all hover:bg-white/[0.04] group"
+              className="flex items-center gap-4 px-5 py-4 transition-all hover:bg-white/[0.04] hover:pl-6 group"
             >
               {/* Token Icon */}
               <div
