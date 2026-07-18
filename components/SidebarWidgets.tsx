@@ -39,10 +39,10 @@ export default function SidebarWidgets({ events, tokens }: SidebarWidgetsProps) 
           const event = decodeB20CreatedEvent(log);
           if (!event) continue;
           decoded.push({
-            address: event.tokenAddress,
-            creator: event.creator,
-            variant: event.variant,
-            salt: event.salt,
+            address: event.tokenAddress ?? "",
+            creator: event.creator ?? "",
+            variant: event.variant ?? 0,
+            salt: event.salt ?? "",
             blockNumber: event.blockNumber,
             txHash: event.txHash,
             logIndex: event.logIndex,

@@ -138,6 +138,38 @@ export function decodeTransferEvent(log: {
   return decodeB20Event(log);
 }
 
+// ─── Backwards-compatible aliases (legacy code from before merge) ─────────
+// Both old names delegate to the unified `decodeB20Event` decoder so callers
+// written against the pre-merge API keep working. `address` is optional here
+// to remain compatible with legacy callers that did not pass it through.
+export function decodeAnyEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  address?: string;
+}): B20Event | null {
+  return decodeB20Event({
+    ...log,
+    address: log.address ?? "",
+  });
+}
+
+export function decodeB20CreatedEvent(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  address?: string;
+}): B20Event | null {
+  return decodeB20Event({
+    ...log,
+    address: log.address ?? "",
+  });
+}
+
 // ─── Build event display text ──────────────────────────────────────────────
 export function getEventDescription(event: B20Event): string {
   switch (event.type) {
