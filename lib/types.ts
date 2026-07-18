@@ -1,5 +1,30 @@
 // B20 Token Tracker TypeScript Types
 
+// ─── Aggregated Market Data (multi-source mashup) ───────────────────────────
+export interface TokenMarketData {
+  priceUsd: number | null;
+  priceChange24h: number | null;
+  marketCap: number | null;
+  fdv: number | null;
+  volume24h: number | null;
+  volumeChange24h: number | null;
+  liquidityUsd: number | null;
+  liquidityChange24h: number | null;
+  topPairAddress: string | null; // primary DEX pair for linking
+  dexUrl: string | null; // direct link to DexScreener pair
+  txns24h: { buys: number; sells: number } | null;
+  holders: number | null;
+  sourcePriority: MarketDataSource[]; // which sources returned data
+  lastUpdated: number; // epoch ms
+}
+
+export type MarketDataSource =
+  | "dexscreener"
+  | "geckoterminal"
+  | "birdeye"
+  | "coingecko"
+  | "coinmarketcap";
+
 export interface B20Token {
   address: string;
   name: string;
@@ -13,6 +38,7 @@ export interface B20Token {
   createdAt: number; // block timestamp
   txHash: string;
   isPaused: boolean;
+  marketData?: TokenMarketData; // real-time market overlay
 }
 
 export type B20EventType =
@@ -25,6 +51,8 @@ export type B20EventType =
   | "role_revoked"
   | "policy_updated"
   | "supply_cap_updated"
+  | "name_updated"
+  | "symbol_updated"
   | "b20_created"
   | "memo";
 

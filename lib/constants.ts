@@ -8,8 +8,25 @@ export const POLICY_REGISTRY_ADDRESS = "0x84530000000000000000000000000000000000
 // All B20 token addresses are deterministically derived and share this prefix
 export const B20_ADDRESS_PREFIX = "0xB20f";
 
-// ─── Base Mainnet RPC ──────────────────────────────────────────────────────
-export const BASE_MAINNET_RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || "https://mainnet.base.org";
+// ─── Base Mainnet RPC (server-side) ──────────────────────────────────────
+// Server code MUST read BASE_RPC_URL (never exposed to the browser).
+// NEXT_PUBLIC_BASE_RPC_URL is only a client-side fallback for the public endpoint.
+// We also support a comma-separated list of RPC URLs for rotation on rate limits.
+const SERVER_RPC = process.env.BASE_RPC_URL;
+const CLIENT_RPC =
+  process.env.NEXT_PUBLIC_BASE_RPC_URL || "https://mainnet.base.org";
+
+const RAW_RPC_LIST = (SERVER_RPC || CLIENT_RPC)
+  .split(",")
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+export const BASE_RPC_URLS: string[] = RAW_RPC_LIST.length
+  ? RAW_RPC_LIST
+  : ["https://mainnet.base.org"];
+
+// Primary RPC used by the singleton provider (server context).
+export const BASE_MAINNET_RPC = BASE_RPC_URLS[0];
 
 // ─── B20 Variant enum ───────────────────────────────────────────────────────
 export const B20Variant = {
@@ -23,7 +40,7 @@ export const B20VariantLabels: Record<number, string> = {
   [B20Variant.STABLECOIN]: "Stablecoin",
 };
 
-// ─── B20 Roles (keccak256 hashes of role names) ──────────────────────────────
+// ─── B20 Roles ──────────────────────────────────────────────────────────────
 export const B20Roles = {
   DEFAULT_ADMIN_ROLE: "0x0000000000000000000000000000000000000000000000000000000000000000",
   MINT_ROLE: "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8c984a6e7297", // keccak256("MINT_ROLE")
@@ -46,42 +63,61 @@ export const B20RoleLabels: Record<string, string> = {
   [B20Roles.OPERATOR_ROLE]: "Operator",
 };
 
-// ─── Event Topic Hashes (keccak256 of event signatures) ─────────────────────
-// Computed using ethers.id() — indexed params omitted from signature
+// ─── Event Topic Hashes ────────────────────────────────────────────────────
+// Computed at runtime via ethers `id()` from the canonical B20 event signatures
+// (per base-std IB20.sol and Coinbase CDP B20 events reference). We never hard-code
+// the keccak256 — that is how the placeholder values drifted from reality.
+import { id } from "ethers";
+
 export const EVENT_TOPICS = {
-  // Standard ERC-20 Transfer — also used by B20
-  // Transfer(address indexed from, address indexed to, uint256 value)
-  // From=0x0 → mint, To=0x0 → burn (no separate Mint/Burn events)
-  TRANSFER: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+  // Standard ERC-20 / B20 transfer (mint = from(0x0), burn = to(0x0))
+  TRANSFER: id("Transfer(address,address,uint256)"),
+  APPROVAL: id("Approval(address,address,uint256)"),
 
-  // OpenZeppelin Pausable
-  // Paused(address account)
-  PAUSED: "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258",
+  // Memo (emitted immediately after any memo'd op)
+  MEMO: id("Memo(address,bytes32)"),
 
-  // Unpaused(address account)
-  UNPAUSED: "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa",
+  // Access control (OpenZeppelin AccessControl layout)
+  ROLE_GRANTED: id("RoleGranted(bytes32,address,address)"),
+  ROLE_REVOKED: id("RoleRevoked(bytes32,address,address)"),
+  ROLE_ADMIN_CHANGED: id("RoleAdminChanged(bytes32,bytes32,bytes32)"),
+  LAST_ADMIN_RENOUNCED: id("LastAdminRenounced(address)"),
 
-  // OpenZeppelin AccessControl
-  // RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)
-  ROLE_GRANTED: "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d",
+  // Pause (PausableFeature is encoded as uint8 in the current interface)
+  PAUSED: id("Paused(address,uint8[])"),
+  UNPAUSED: id("Unpaused(address,uint8[])"),
 
-  // RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)
-  ROLE_REVOKED: "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b",
+  // Supply cap
+  SUPPLY_CAP_UPDATED: id("SupplyCapUpdated(address,uint256,uint256)"),
 
-  // B20-specific events
-  // SupplyCapUpdated(uint256 oldCap, uint256 newCap)
-  SUPPLY_CAP_UPDATED: "0xb4d96b3a6638191d0f6aefa0fdc4d99af3592f4c97480e31feeb977723c63b53",
+  // Policy
+  POLICY_UPDATED: id("PolicyUpdated(bytes32,uint64,uint64)"),
+  CONTRACT_URI_UPDATED: id("ContractURIUpdated()"),
 
-  // PolicyUpdated(address indexed policy, bool indexed enabled)
-  POLICY_UPDATED: "0x24ac5fff0e5892def17518933250c7d272c0298563d12393522b0b653e928ee9",
-
-  // Memo(uint256 indexed id, string memo)
-  MEMO: "0x1ac03619c3cd8038349dc82d4190eb6ed901d9e08e60dbab3bfdbee0a153cec7",
-
-  // B20Factory
-  // B20Created(uint8 variant, address indexed creator, address indexed token, bytes32 salt)
-  B20_CREATED: "0x981ebffa6c2d7329a02948ec363b890f5a1e1e370bd6414de9ba2bb7b350d78d",
+  // Metadata
+  NAME_UPDATED: id("NameUpdated(address,string)"),
+  SYMBOL_UPDATED: id("SymbolUpdated(address,string)"),
 } as const;
+
+// Reverse lookup: topic -> canonical signature, used by the event decoder.
+export const EVENT_SIGNATURES: Record<string, string> = {
+  [EVENT_TOPICS.TRANSFER]: "Transfer(address,address,uint256)",
+  [EVENT_TOPICS.MEMO]: "Memo(address,bytes32)",
+  [EVENT_TOPICS.ROLE_GRANTED]: "RoleGranted(bytes32,address,address)",
+  [EVENT_TOPICS.ROLE_REVOKED]: "RoleRevoked(bytes32,address,address)",
+  [EVENT_TOPICS.ROLE_ADMIN_CHANGED]: "RoleAdminChanged(bytes32,bytes32,bytes32)",
+  [EVENT_TOPICS.LAST_ADMIN_RENOUNCED]: "LastAdminRenounced(address)",
+  [EVENT_TOPICS.PAUSED]: "Paused(address,uint8[])",
+  [EVENT_TOPICS.UNPAUSED]: "Unpaused(address,uint8[])",
+  [EVENT_TOPICS.SUPPLY_CAP_UPDATED]: "SupplyCapUpdated(address,uint256,uint256)",
+  [EVENT_TOPICS.POLICY_UPDATED]: "PolicyUpdated(bytes32,uint64,uint64)",
+  [EVENT_TOPICS.CONTRACT_URI_UPDATED]: "ContractURIUpdated()",
+  [EVENT_TOPICS.NAME_UPDATED]: "NameUpdated(address,string)",
+  [EVENT_TOPICS.SYMBOL_UPDATED]: "SymbolUpdated(address,string)",
+};
+
+// Topic list for multi-event log queries.
+export const ALL_B20_EVENT_TOPICS = Object.values(EVENT_TOPICS);
 
 // ─── Minimal ABIs ────────────────────────────────────────────────────────────
 export const B20_TOKEN_ABI = [

@@ -2,12 +2,37 @@
 
 import Link from "next/link";
 import type { B20Token } from "@/lib/types";
-import { formatAmount, truncateAddress } from "@/lib/b20-client";
+import { formatAmount, formatNumber, truncateAddress } from "@/lib/b20-client";
 import { EXPLORER_URL } from "@/lib/constants";
 
 interface TokenListProps {
   tokens: B20Token[];
   searchQuery: string;
+}
+
+/**
+ * Format a USD number with K/M/B suffixes for compact display.
+ * Returns null for missing/invalid values so caller can show "—".
+ */
+function fmtUsd(n: number | null | undefined): string | null {
+  if (n == null || Number.isNaN(n)) return null;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  if (n === 0) return "$0";
+  if (n < 0.0001) return `$${n.toExponential(2)}`;
+  if (n < 1) return `$${n.toFixed(6)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * Format 24h price change with sign and 2-decimal precision.
+ */
+function fmtChange(n: number | null | undefined): { text: string; isUp: boolean } | null {
+  if (n == null || Number.isNaN(n)) return null;
+  const isUp = n >= 0;
+  const sign = isUp ? "+" : "";
+  return { text: `${sign}${n.toFixed(2)}%`, isUp };
 }
 
 export default function TokenList({ tokens, searchQuery }: TokenListProps) {
@@ -21,159 +46,155 @@ export default function TokenList({ tokens, searchQuery }: TokenListProps) {
     );
   });
 
-  if (filtered.length === 0) {
-    return (
-      <div className="glass-card overflow-hidden" role="region" aria-label="Token list">
-        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>B20 Tokens</h2>
-            <span className="badge-blue">{filtered.length}</span>
-          </div>
+  return (
+    <div className="rounded-xl glass-panel overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+        <h2 className="text-sm font-semibold text-white">
+          B20 Tokens
+          <span className="ml-2 rounded-full bg-[#0052FF]/20 px-2 py-0.5 text-xs text-[#0052FF]">
+            {filtered.length}
+          </span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {tokens.some((t) => t.marketData) && (
+            <span className="flex items-center gap-1 text-[10px] text-gray-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+              live market
+            </span>
+          )}
+          <span className="text-xs text-gray-500">
+            Sorted by most recent
+          </span>
         </div>
+      </div>
+
+      {/* Token List */}
+      {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.03] mb-3">
-            <svg className="h-6 w-6" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            {searchQuery ? "No tokens match your search" : "No B20 tokens found"}
+          <div className="text-4xl mb-3">🔍</div>
+          <p className="text-gray-400 text-sm">
+            {searchQuery
+              ? "No tokens match your search"
+              : "Scanning Base Mainnet for B20 tokens..."}
           </p>
           {!searchQuery && (
-            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-              Scanning Base Mainnet for B20-prefixed addresses
+            <p className="text-gray-600 text-xs mt-1">
+              This may take a moment on first load
             </p>
           )}
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="glass-card overflow-hidden" role="region" aria-label="Token list">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>B20 Tokens</h2>
-          <span className="badge-blue" aria-label={`${filtered.length} tokens`}>{filtered.length}</span>
-        </div>
-        <span className="text-[10px] uppercase tracking-[0.06em]" style={{ color: "var(--text-tertiary)" }}>
-          {tokens.length} found
-        </span>
-      </div>
-
-      {/* Table Header - desktop */}
-      <div className="hidden sm:grid sm:grid-cols-[1fr_100px_140px_120px_20px] gap-3 px-4 py-2 border-b border-[var(--border-subtle)]" role="row" aria-hidden="true">
-        <span className="table-header">Token</span>
-        <span className="table-header text-right">Type</span>
-        <span className="table-header text-right">Total Supply</span>
-        <span className="table-header text-right">Address</span>
-        <span></span>
-      </div>
-
-      {/* Token Rows */}
-      <div className="divide-y divide-[var(--border-subtle)]" role="list" aria-label="Token list items">
-        {filtered.map((token, index) => (
-          <Link
-            key={token.address}
-            href={`/token/${token.address}`}
-            className="table-row block sm:grid sm:grid-cols-[1fr_100px_140px_120px_20px] sm:gap-3 px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B82F6]/50"
-            role="listitem"
-            aria-label={`${token.name} (${token.symbol}) - ${token.variant === "stablecoin" ? "Stablecoin" : "Asset"} - Supply: ${formatAmount(token.totalSupply, token.decimals)}`}
-          >
-            {/* Token info */}
-            <div className="flex items-center gap-3">
+      ) : (
+        <div className="divide-y divide-white/5">
+          {filtered.map((token) => (
+            <Link
+              key={token.address}
+              href={`/token/${token.address}`}
+              className="flex items-center gap-4 px-5 py-4 transition-all hover:bg-white/[0.04] hover:pl-6 group"
+            >
+              {/* Token Icon */}
               <div
-                className={`token-icon ${token.variant === "stablecoin" ? "token-icon-stablecoin" : "token-icon-asset"}`}
-                aria-hidden="true"
+                className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold ${
+                  token.variant === "stablecoin"
+                    ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                    : "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                }`}
               >
                 {token.symbol.slice(0, 3)}
               </div>
-              <div className="min-w-0">
+
+              {/* Token Info */}
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm truncate" style={{ color: "var(--text-primary)" }}>
+                  <span className="font-semibold text-white truncate text-sm">
                     {token.name}
                   </span>
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[11px] font-mono" style={{ color: "var(--text-tertiary)" }}>
+                  <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">
                     {token.symbol}
                   </span>
-                  {token.variant === "stablecoin" && token.currency && (
-                    <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
-                      · {token.currency}
-                    </span>
-                  )}
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      token.variant === "stablecoin"
+                        ? "bg-green-500/20 text-green-400"
+                        : "bg-purple-500/20 text-purple-400"
+                    }`}
+                  >
+                    {token.variant === "stablecoin" ? "💵 Stablecoin" : "📊 Asset"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <a
+                    href={`${EXPLORER_URL}/address/${token.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-gray-500 font-mono hover:text-gray-300 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {truncateAddress(token.address, 8)}
+                  </a>
                 </div>
               </div>
-            </div>
 
-            {/* Variant badge */}
-            <div className="hidden sm:flex items-center justify-end">
-              <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                token.variant === "stablecoin" ? "badge-green" : "badge-purple"
-              }`}>
-                {token.variant === "stablecoin" ? "Stable" : "Asset"}
-              </span>
-            </div>
-
-            {/* Supply */}
-            <div className="hidden sm:flex items-center justify-end">
-              <div className="text-right">
-                <p className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+              {/* Supply */}
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-semibold text-white tabular-nums">
                   {formatAmount(token.totalSupply, token.decimals)}
                 </p>
-                <p className="text-[9px] uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                  supply
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  Total Supply
                 </p>
               </div>
-            </div>
 
-            {/* Address */}
-            <div className="hidden sm:flex items-center justify-end">
-              <a
-                href={`${EXPLORER_URL}/address/${token.address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-[11px] link-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50"
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`View ${token.symbol} on Basescan`}
+              {/* Market Data (price + 24h change + MCap) */}
+              {(() => {
+                const md = token.marketData;
+                const price = fmtUsd(md?.priceUsd);
+                const chg = fmtChange(md?.priceChange24h);
+                const mcap = fmtUsd(md?.marketCap);
+                if (!md) return null;
+                return (
+                  <div className="text-right hidden md:block min-w-[110px]">
+                    <p className="text-sm font-semibold text-white tabular-nums">
+                      {price ?? "—"}
+                    </p>
+                    <p
+                      className={`text-[10px] tabular-nums ${
+                        chg
+                          ? chg.isUp
+                            ? "text-green-400"
+                            : "text-red-400"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {chg ? chg.text : "—"}
+                    </p>
+                    {mcap && (
+                      <p className="text-[10px] text-gray-500 tabular-nums">
+                        MCap {mcap}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Arrow */}
+              <svg
+                className="h-4 w-4 text-gray-600 transition-all group-hover:text-[#0052FF] group-hover:translate-x-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                {truncateAddress(token.address, 4)}
-              </a>
-            </div>
-
-            {/* Arrow */}
-            <div className="hidden sm:flex items-center justify-end">
-              <svg className="h-3.5 w-3.5 transition-all group-hover:translate-x-0.5" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
               </svg>
-            </div>
-
-            {/* Mobile info */}
-            <div className="flex items-center gap-3 mt-1.5 sm:hidden" aria-hidden="true">
-              <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
-                token.variant === "stablecoin" ? "badge-green" : "badge-purple"
-              }`}>
-                {token.variant === "stablecoin" ? "Stable" : "Asset"}
-              </span>
-              <span className="text-[11px] tabular-nums font-mono" style={{ color: "var(--text-secondary)" }}>
-                {formatAmount(token.totalSupply, token.decimals)}
-              </span>
-              <a
-                href={`${EXPLORER_URL}/address/${token.address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-[10px] ml-auto link-accent"
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`View ${token.symbol} on Basescan`}
-              >
-                {truncateAddress(token.address, 3)}
-              </a>
-            </div>
-          </Link>
-        ))}
-      </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

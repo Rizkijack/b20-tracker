@@ -5,13 +5,13 @@ import Header from "@/components/Header";
 import StatsBar from "@/components/StatsBar";
 import TokenList from "@/components/TokenList";
 import LiveEventFeed from "@/components/LiveEventFeed";
-import SidebarWidgets from "@/components/SidebarWidgets";
 import { useB20Tokens } from "@/hooks/useB20Tokens";
 import { useB20Events } from "@/hooks/useB20Events";
 import { useStats } from "@/hooks/useStats";
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "b20-only">("b20-only");
 
   const { tokens, loading: tokensLoading, error: tokensError, currentBlock: tokenBlock } = useB20Tokens();
   const { events, loading: eventsLoading, error: eventsError, currentBlock: eventBlock } = useB20Events();
@@ -20,139 +20,137 @@ export default function DashboardPage() {
 
   const latestBlock = Math.max(tokenBlock, eventBlock);
 
-  const showError = tokensError || eventsError;
-  const isInitialLoad = tokensLoading && tokens.length === 0;
-  const isEventsLoading = eventsLoading && events.length === 0;
+  // Filter tokens based on selected mode
+  const filteredTokens = filterMode === "b20-only"
+    ? tokens.filter((t) => t.marketData != null || t.variant === "asset" || t.variant === "stablecoin")
+    : tokens;
 
   return (
-    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--bg-body)" }}>
+    <div className="flex min-h-screen flex-col bg-background relative selection:bg-[#0052FF]/30">
+      {/* Background ambient glow */}
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[#0052FF]/10 blur-[120px]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-500/10 blur-[120px]" />
+      </div>
+
+      {/* Header */}
       <Header searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
-      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6">
+      {/* Main Content */}
+      <main className="relative z-10 mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
         {/* Hero Section */}
-        <div className="mb-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#3B82F6] to-[#1D4ED8] text-white font-bold text-xs shadow-lg shadow-blue-500/20" aria-hidden="true">
-              B20
-            </div>
+        <div className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold sm:text-xl tracking-tight" style={{ color: "var(--text-primary)" }}>
-                B20 Token <span style={{ color: "var(--accent-blue)" }}>Dashboard</span>
+              <h2 className="text-2xl font-bold text-white sm:text-3xl">
+                B20 Token <span className="gradient-text">Dashboard</span>
               </h2>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+              <p className="mt-1 text-sm text-gray-500">
                 Real-time tracker for Base&apos;s native token standard
               </p>
+            </div>
+            {/* Filter Toggle */}
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+              <button
+                onClick={() => setFilterMode("b20-only")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  filterMode === "b20-only"
+                    ? "bg-[#0052FF] text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                B20 Only
+              </button>
+              <button
+                onClick={() => setFilterMode("all")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  filterMode === "all"
+                    ? "bg-[#0052FF] text-white"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                All Tokens
+              </button>
             </div>
           </div>
         </div>
 
         {/* Stats Bar */}
-        <div className="mb-5">
+        <div className="mb-6">
           <StatsBar stats={stats} blockHeight={latestBlock} />
         </div>
 
         {/* Error Banner */}
-        {showError && (
-          <div className="mb-5 rounded-xl px-4 py-3" style={{ border: "1px solid var(--accent-red-dim)", backgroundColor: "var(--accent-red-dim)" }}>
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
-                <svg className="h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-              </div>
-              <p className="text-sm" style={{ color: "var(--accent-red)" }}>
-                Connection issues detected. Retrying...
-              </p>
-            </div>
+        {(tokensError || eventsError) && (
+          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-3">
+            <p className="text-sm text-red-400">
+              ⚠️ Connection issues detected. Retrying...
+            </p>
             {tokensError && (
-              <p className="text-xs mt-1 ml-8" style={{ color: "var(--accent-red)" }}>{tokensError}</p>
+              <p className="text-xs text-red-400/60 mt-1">{tokensError}</p>
             )}
           </div>
         )}
 
-        {/* Three-column layout: 2/12 - 7/12 - 3/12 */}
-        <div className="grid gap-5 lg:grid-cols-12">
-          {/* Left: Token List - 2 columns */}
-          <div className="lg:col-span-3 xl:col-span-2">
-            {isInitialLoad ? (
-              <div className="glass-card flex flex-col items-center justify-center py-16">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#3B82F6] border-t-transparent" role="status" aria-label="Loading tokens"></div>
-                <p className="mt-4 text-sm animate-fade-in" style={{ color: "var(--text-tertiary)" }}>
-                  Scanning Base Mainnet
-                </p>
-                <p className="text-xs mt-1 animate-fade-in" style={{ color: "var(--text-muted)" }}>
-                  Searching for B20-prefixed addresses
-                </p>
+        {/* Two-column layout: Token List + Live Feed */}
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Token List - 2 columns */}
+          <div className="lg:col-span-2">
+            {tokensLoading && tokens.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 rounded-xl border border-white/10 bg-white/[0.03]">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#0052FF] border-t-transparent"></div>
+                <p className="mt-3 text-sm text-gray-500">Scanning Base Mainnet for B20 tokens...</p>
+                <p className="text-xs text-gray-600 mt-1">Checking recent blocks for B20-prefixed addresses</p>
               </div>
             ) : (
-              <TokenList tokens={tokens} searchQuery={searchQuery} />
+              <TokenList tokens={filteredTokens} searchQuery={searchQuery} />
             )}
           </div>
 
-          {/* Center: Live Event Feed - 7 columns on xl, 6 on lg */}
-          <div className="lg:col-span-6 xl:col-span-7">
-            {isEventsLoading ? (
-              <div className="glass-card flex flex-col items-center justify-center py-16">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-green)] border-t-transparent" role="status" aria-label="Loading events"></div>
-                <p className="mt-4 text-sm animate-fade-in" style={{ color: "var(--text-tertiary)" }}>
-                  Connecting to Base Mainnet
-                </p>
-                <p className="text-xs mt-1 animate-fade-in" style={{ color: "var(--text-muted)" }}>
-                  Listening for B20 Transfer events
-                </p>
+          {/* Live Event Feed - 3 columns */}
+          <div className="lg:col-span-3">
+            {eventsLoading && events.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 rounded-xl border border-white/10 bg-white/[0.03]">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-green-500 border-t-transparent"></div>
+                <p className="mt-3 text-sm text-gray-500">Connecting to Base Mainnet...</p>
+                <p className="text-xs text-gray-600 mt-1">Listening for B20 Transfer events</p>
               </div>
             ) : (
               <LiveEventFeed events={events} />
             )}
           </div>
-
-          {/* Right: Sidebar Widgets - 3 columns */}
-          <div className="lg:col-span-3">
-            {tokens.length > 0 || events.length > 0 ? (
-              <SidebarWidgets events={events} tokens={tokens} />
-            ) : isInitialLoad && isEventsLoading ? (
-              <div className="glass-card flex flex-col items-center justify-center py-16">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#A855F7] border-t-transparent" role="status" aria-label="Loading"></div>
-                <p className="mt-3 text-xs animate-fade-in" style={{ color: "var(--text-tertiary)" }}>
-                  Loading widgets...
-                </p>
-              </div>
-            ) : null}
-          </div>
         </div>
 
-        {/* Footer */}
-        <footer className="mt-8 border-t pt-5 pb-4" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {/* Footer Info */}
+        <footer className="mt-8 border-t border-white/5 pt-6 pb-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4 text-xs text-gray-600">
               <span>Powered by Base RPC</span>
-              <span style={{ color: "var(--border-default)" }}>|</span>
+              <span>•</span>
               <a
                 href="https://docs.base.org/base-chain/specs/upgrades/beryl/b20"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="transition-colors hover:opacity-80"
-                style={{ color: "var(--accent-blue)" }}
+                className="text-[#0052FF] hover:text-[#0052FF]/80 transition-colors"
               >
-                B20 Protocol
+                B20 Protocol Spec
               </a>
-              <span style={{ color: "var(--border-default)" }}>|</span>
+              <span>•</span>
               <a
                 href="https://github.com/base/base-std"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="transition-colors hover:opacity-80"
-                style={{ color: "var(--accent-blue)" }}
+                className="text-[#0052FF] hover:text-[#0052FF]/80 transition-colors"
               >
                 base-std
               </a>
             </div>
-            <div className="flex items-center gap-2 text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <div className="relative flex h-1.5 w-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500"></span>
-              </span>
-              Polling every 4s
+              </div>
+              Polling Base Mainnet every 4 seconds
             </div>
           </div>
         </footer>
