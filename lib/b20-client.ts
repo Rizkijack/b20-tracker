@@ -4,6 +4,7 @@ import {
   B20_TOKEN_ABI,
   B20_ADDRESS_PREFIX,
   B20Variant,
+  ALL_B20_EVENT_TOPICS,
 } from "./constants";
 import { cacheGet, cacheSet, TTL } from "./server-cache";
 
@@ -240,6 +241,35 @@ export async function fetchTokenEvents(
   }
 }
 
+// ─── Fetch ALL B20 events (transfer, memo, roles, pause, supply cap, …) ──────
+export async function fetchTokenAllEvents(
+  tokenAddress: string,
+  fromBlock: number,
+  toBlock: number,
+): Promise<{ topics: string[]; data: string; blockNumber: number; txHash: string; logIndex: number; address: string }[]> {
+  try {
+    const logs = await rpcCall((p) =>
+      p.getLogs({
+        fromBlock,
+        toBlock,
+        address: tokenAddress,
+        topics: [ALL_B20_EVENT_TOPICS],
+      }),
+    );
+
+    return logs.map((log) => ({
+      topics: [...log.topics],
+      data: log.data,
+      blockNumber: Number(log.blockNumber),
+      txHash: log.transactionHash ?? "",
+      logIndex: Number(log.index),
+      address: log.address,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Fetch Transfer events across all B20 tokens in a block range ───────────
 export async function fetchRecentB20Transfers(
   fromBlock: number,
@@ -282,22 +312,13 @@ export async function fetchRecentB20Transfers(
 }
 
 // ─── Detect token variant from address ─────────────────────────────────────
-// B20 address: [0xB20f prefix (10 bytes)] [variant byte (1 byte)] [bytes9(keccak256(...))]
+// Canonical B20 layout: 0xB20f + 9 zero bytes (10-byte prefix) + 1 variant byte
+// + 9-byte keccak256 suffix = 20 bytes / 40 hex chars. The variant byte sits at
+// hex positions [20,22) (byte 10). ASSET = 0x00, STABLECOIN = 0x01.
 export function detectVariant(address: string): "asset" | "stablecoin" {
-  // The variant byte is at position 10 (20th hex char, after 0xB20f = 4 bytes prefix)
-  // Full B20 prefix is 10 bytes = 20 hex chars: 0xB20f0000000000000000000000
-  // Variant is encoded at address[10] position
-  try {
-    const cleaned = address.toLowerCase().replace("0x", "");
-    // B20 addresses: bytes 0-9 are prefix, byte 10 is variant
-    // "b20f00000000000000000000" = 22 hex chars (11 bytes), variant at byte 10 = hex chars 20-21
-    if (cleaned.length >= 22) {
-      const variantHex = cleaned.slice(20, 22);
-      const variantInt = parseInt(variantHex, 16);
-      return variantInt === B20Variant.STABLECOIN ? "stablecoin" : "asset";
-    }
-  } catch {
-    // ignore
-  }
-  return "asset";
+  const cleaned = address.toLowerCase().replace("0x", "");
+  // A full B20 address is 40 hex chars; anything shorter is not a valid B20 address.
+  if (cleaned.length < 40) return "asset";
+  const variantInt = parseInt(cleaned.slice(20, 22), 16);
+  return variantInt === B20Variant.STABLECOIN ? "stablecoin" : "asset";
 }

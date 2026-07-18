@@ -15,6 +15,22 @@ import { POLLING_INTERVAL, MAX_TOKEN_DISCOVERY_BATCH } from "@/lib/constants";
 // Base blocks: ~2s per block. June 26, 2025 ≈ block ~25,000,000
 const B20_ACTIVATION_BLOCK = 25000000;
 
+// Persist the last-scanned block in localStorage so a cold start resumes from
+// where it left off instead of re-scanning from B20_ACTIVATION_BLOCK.
+const SCAN_CURSOR_KEY = "b20:lastScannedBlock";
+
+function loadScanCursor(): number {
+  if (typeof window === "undefined") return B20_ACTIVATION_BLOCK;
+  const raw = window.localStorage.getItem(SCAN_CURSOR_KEY);
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : B20_ACTIVATION_BLOCK;
+}
+
+function saveScanCursor(block: number): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SCAN_CURSOR_KEY, String(block));
+}
+
 // Market data refresh cadence (ms) + how many tokens get live market overlays
 const MARKET_REFRESH_MS = 30_000;
 const MARKET_OVERLAY_LIMIT = 20;
@@ -48,7 +64,7 @@ export function useB20Tokens() {
   const [tokens, setTokens] = useState<B20Token[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastScannedBlock, setLastScannedBlock] = useState<number>(B20_ACTIVATION_BLOCK);
+  const [lastScannedBlock, setLastScannedBlock] = useState<number>(() => loadScanCursor());
   const [currentBlock, setCurrentBlock] = useState<number>(0);
   const discoveredRef = useRef<Set<string>>(new Set());
 
@@ -117,6 +133,7 @@ export function useB20Tokens() {
       }
 
       setLastScannedBlock(lastScannedBlock + blocksToScan);
+      saveScanCursor(lastScannedBlock + blocksToScan);
       setError(null);
     } catch (err) {
       console.error("Error discovering B20 tokens:", err);

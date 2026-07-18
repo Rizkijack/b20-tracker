@@ -64,32 +64,60 @@ export const B20RoleLabels: Record<string, string> = {
 };
 
 // ─── Event Topic Hashes ────────────────────────────────────────────────────
+// Computed at runtime via ethers `id()` from the canonical B20 event signatures
+// (per base-std IB20.sol and Coinbase CDP B20 events reference). We never hard-code
+// the keccak256 — that is how the placeholder values drifted from reality.
+import { id } from "ethers";
+
 export const EVENT_TOPICS = {
-  // Standard ERC-20 Transfer (also used by B20)
-  TRANSFER: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+  // Standard ERC-20 / B20 transfer (mint = from(0x0), burn = to(0x0))
+  TRANSFER: id("Transfer(address,address,uint256)"),
+  APPROVAL: id("Approval(address,address,uint256)"),
 
-  // B20-specific events
-  MEMO: "0x4a39406426e4f3f4a4f3e4a3e4e4b4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a", // placeholder - actual hash computed at runtime
-  MINT: "0x0000000000000000000000000000000000000000000000000000000000000001", // placeholder
-  BURN: "0x0000000000000000000000000000000000000000000000000000000000000002", // placeholder
+  // Memo (emitted immediately after any memo'd op)
+  MEMO: id("Memo(address,bytes32)"),
 
-  // Access control
-  ROLE_GRANTED: "0x2f2ff15d57a19c8794bc3a7a6792cd106bb05270a3a3c1a56a5f45f07ba1b5d9",
-  ROLE_REVOKED: "0x853828b6f12d8421f092f0a3f7e10ae7e932e0a86e9a9ca67a7eb827e95c1e48",
+  // Access control (OpenZeppelin AccessControl layout)
+  ROLE_GRANTED: id("RoleGranted(bytes32,address,address)"),
+  ROLE_REVOKED: id("RoleRevoked(bytes32,address,address)"),
+  ROLE_ADMIN_CHANGED: id("RoleAdminChanged(bytes32,bytes32,bytes32)"),
+  LAST_ADMIN_RENOUNCED: id("LastAdminRenounced(address)"),
 
-  // Supply
-  SUPPLY_CAP_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000003", // placeholder
+  // Pause (PausableFeature is encoded as uint8 in the current interface)
+  PAUSED: id("Paused(address,uint8[])"),
+  UNPAUSED: id("Unpaused(address,uint8[])"),
 
-  // Pause
-  PAUSED: "0x0000000000000000000000000000000000000000000000000000000000000004", // placeholder
-  UNPAUSED: "0x0000000000000000000000000000000000000000000000000000000000000005", // placeholder
+  // Supply cap
+  SUPPLY_CAP_UPDATED: id("SupplyCapUpdated(address,uint256,uint256)"),
 
   // Policy
-  POLICY_UPDATED: "0x0000000000000000000000000000000000000000000000000000000000000006", // placeholder
+  POLICY_UPDATED: id("PolicyUpdated(bytes32,uint64,uint64)"),
+  CONTRACT_URI_UPDATED: id("ContractURIUpdated()"),
 
-  // Factory
-  B20_CREATED: "0x0000000000000000000000000000000000000000000000000000000000000007", // placeholder
+  // Metadata
+  NAME_UPDATED: id("NameUpdated(address,string)"),
+  SYMBOL_UPDATED: id("SymbolUpdated(address,string)"),
 } as const;
+
+// Reverse lookup: topic -> canonical signature, used by the event decoder.
+export const EVENT_SIGNATURES: Record<string, string> = {
+  [EVENT_TOPICS.TRANSFER]: "Transfer(address,address,uint256)",
+  [EVENT_TOPICS.MEMO]: "Memo(address,bytes32)",
+  [EVENT_TOPICS.ROLE_GRANTED]: "RoleGranted(bytes32,address,address)",
+  [EVENT_TOPICS.ROLE_REVOKED]: "RoleRevoked(bytes32,address,address)",
+  [EVENT_TOPICS.ROLE_ADMIN_CHANGED]: "RoleAdminChanged(bytes32,bytes32,bytes32)",
+  [EVENT_TOPICS.LAST_ADMIN_RENOUNCED]: "LastAdminRenounced(address)",
+  [EVENT_TOPICS.PAUSED]: "Paused(address,uint8[])",
+  [EVENT_TOPICS.UNPAUSED]: "Unpaused(address,uint8[])",
+  [EVENT_TOPICS.SUPPLY_CAP_UPDATED]: "SupplyCapUpdated(address,uint256,uint256)",
+  [EVENT_TOPICS.POLICY_UPDATED]: "PolicyUpdated(bytes32,uint64,uint64)",
+  [EVENT_TOPICS.CONTRACT_URI_UPDATED]: "ContractURIUpdated()",
+  [EVENT_TOPICS.NAME_UPDATED]: "NameUpdated(address,string)",
+  [EVENT_TOPICS.SYMBOL_UPDATED]: "SymbolUpdated(address,string)",
+};
+
+// Topic list for multi-event log queries.
+export const ALL_B20_EVENT_TOPICS = Object.values(EVENT_TOPICS);
 
 // ─── Minimal ABIs ────────────────────────────────────────────────────────────
 export const B20_TOKEN_ABI = [

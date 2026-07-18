@@ -51,6 +51,8 @@ export type B20EventType =
   | "role_revoked"
   | "policy_updated"
   | "supply_cap_updated"
+  | "name_updated"
+  | "symbol_updated"
   | "b20_created"
   | "memo";
 

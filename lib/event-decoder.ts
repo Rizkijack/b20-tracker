@@ -1,11 +1,131 @@
-import { id } from "ethers";
-import type { B20Event } from "./types";
+import { getAddress } from "ethers";
+import type { B20Event, B20EventType } from "./types";
 import { truncateAddress } from "./b20-client";
+import { EVENT_TOPICS } from "./constants";
 
-// ─── Event Topic Hashes (computed at runtime) ───────────────────────────────
-const TRANSFER_TOPIC = id("Transfer(address,address,uint256)");
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// ─── Decode Transfer event from log ─────────────────────────────────────────
+function indexedAddress(topic: string): string {
+  return "0x" + topic.slice(topic.length - 40);
+}
+
+// ─── Decode any B20 event from a raw log ────────────────────────────────────
+export function decodeB20Event(log: {
+  topics: string[];
+  data: string;
+  blockNumber: number;
+  txHash: string;
+  logIndex: number;
+  address: string;
+}): B20Event | null {
+  const topic = log.topics[0];
+  if (!topic) return null;
+
+  const base = {
+    id: `${log.txHash}-${log.logIndex}`,
+    tokenAddress: log.address,
+    blockNumber: log.blockNumber,
+    txHash: log.txHash,
+    logIndex: log.logIndex,
+    timestamp: 0, // filled later by fetcher
+  };
+
+  try {
+    switch (topic) {
+      case EVENT_TOPICS.TRANSFER: {
+        if (log.topics.length < 3) return null;
+        const from = indexedAddress(log.topics[1]);
+        const to = indexedAddress(log.topics[2]);
+        const amount = BigInt(log.data);
+        let type: B20EventType = "transfer";
+        if (from.toLowerCase() === ZERO_ADDRESS) type = "mint";
+        else if (to.toLowerCase() === ZERO_ADDRESS) type = "burn";
+        return { ...base, type, from, to, amount };
+      }
+
+      case EVENT_TOPICS.MEMO: {
+        if (log.topics.length < 2) return null;
+        const caller = indexedAddress(log.topics[1]);
+        const memo = log.topics[2] ?? "0x" + "0".repeat(64);
+        return { ...base, type: "memo", from: caller, memo };
+      }
+
+      case EVENT_TOPICS.ROLE_GRANTED: {
+        if (log.topics.length < 3) return null;
+        const role = log.topics[1];
+        const account = getAddress(indexedAddress(log.topics[2]));
+        return { ...base, type: "role_granted", role, account };
+      }
+
+      case EVENT_TOPICS.ROLE_REVOKED: {
+        if (log.topics.length < 3) return null;
+        const role = log.topics[1];
+        const account = getAddress(indexedAddress(log.topics[2]));
+        return { ...base, type: "role_revoked", role, account };
+      }
+
+      case EVENT_TOPICS.PAUSED:
+        return { ...base, type: "pause" };
+
+      case EVENT_TOPICS.UNPAUSED:
+        return { ...base, type: "unpause" };
+
+      case EVENT_TOPICS.SUPPLY_CAP_UPDATED: {
+        // data: (address oldUpdater, uint256 oldCap, uint256 newCap) — all non-indexed
+        const words = stripDataWords(log.data);
+        if (words.length < 3) return null;
+        const oldCap = BigInt(words[1]);
+        const newCap = BigInt(words[2]);
+        return { ...base, type: "supply_cap_updated", oldCap, newCap };
+      }
+
+      case EVENT_TOPICS.POLICY_UPDATED: {
+        if (log.topics.length < 2) return null;
+        const scope = log.topics[1];
+        return { ...base, type: "policy_updated", role: scope };
+      }
+
+      case EVENT_TOPICS.NAME_UPDATED:
+      case EVENT_TOPICS.SYMBOL_UPDATED: {
+        // data: (address updater, string value) — decoded best-effort
+        const value = decodeShortString(log.data);
+        const type: B20EventType =
+          topic === EVENT_TOPICS.NAME_UPDATED ? "name_updated" : "symbol_updated";
+        return { ...base, type, memo: value };
+      }
+
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function stripDataWords(data: string): string[] {
+  const hex = data.replace(/^0x/, "");
+  const words: string[] = [];
+  for (let i = 0; i + 64 <= hex.length; i += 64) {
+    words.push("0x" + hex.slice(i, i + 64));
+  }
+  return words;
+}
+
+function decodeShortString(data: string): string {
+  try {
+    const hex = data.replace(/^0x/, "");
+    // Last word holds the string length; prior words hold the UTF-8 bytes.
+    if (hex.length < 64) return "";
+    const len = parseInt(hex.slice(hex.length - 64), 16);
+    const bytes = hex.slice(0, hex.length - 64);
+    const clean = bytes.slice(0, len * 2);
+    return Buffer.from(clean, "hex").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+// ─── Backwards-compatible Transfer decoder (used by live transfer feed) ─────
 export function decodeTransferEvent(log: {
   topics: string[];
   data: string;
@@ -14,42 +134,8 @@ export function decodeTransferEvent(log: {
   logIndex: number;
   address: string;
 }): B20Event | null {
-  if (log.topics[0] !== TRANSFER_TOPIC) return null;
-  if (log.topics.length < 3) return null;
-
-  try {
-    // topics[1] = from (indexed), topics[2] = to (indexed)
-    const from = "0x" + log.topics[1].slice(log.topics[1].length - 40);
-    const to = "0x" + log.topics[2].slice(log.topics[2].length - 40);
-
-    // data = amount (uint256, non-indexed)
-    const amount = BigInt(log.data);
-
-    // Determine event type: mint (from=0x0), burn (to=0x0), or transfer
-    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    let type: B20Event["type"] = "transfer";
-
-    if (from.toLowerCase() === ZERO_ADDRESS) {
-      type = "mint";
-    } else if (to.toLowerCase() === ZERO_ADDRESS) {
-      type = "burn";
-    }
-
-    return {
-      id: `${log.txHash}-${log.logIndex}`,
-      type,
-      tokenAddress: log.address,
-      blockNumber: log.blockNumber,
-      txHash: log.txHash,
-      logIndex: log.logIndex,
-      timestamp: 0, // filled later by fetcher
-      from,
-      to,
-      amount,
-    };
-  } catch {
-    return null;
-  }
+  if (log.topics[0] !== EVENT_TOPICS.TRANSFER) return null;
+  return decodeB20Event(log);
 }
 
 // ─── Build event display text ──────────────────────────────────────────────
@@ -75,6 +161,10 @@ export function getEventDescription(event: B20Event): string {
       return `New B20 token by ${truncateAddress(event.creator ?? "")}`;
     case "memo":
       return event.memo || "Memo attached";
+    case "name_updated":
+      return `Name → ${event.memo || "?"}`;
+    case "symbol_updated":
+      return `Symbol → ${event.memo || "?"}`;
     default:
       return "Unknown event";
   }
@@ -103,6 +193,10 @@ export function getEventBadgeColor(type: B20Event["type"]): string {
       return "bg-pink-500/20 text-pink-400 border border-pink-500/30";
     case "memo":
       return "bg-slate-500/20 text-slate-400 border border-slate-500/30";
+    case "name_updated":
+      return "bg-teal-500/20 text-teal-400 border border-teal-500/30";
+    case "symbol_updated":
+      return "bg-teal-500/20 text-teal-400 border border-teal-500/30";
     case "policy_updated":
       return "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30";
     default:
@@ -123,6 +217,8 @@ export function getEventIcon(type: B20Event["type"]): string {
     case "supply_cap_updated": return "📊";
     case "b20_created": return "🆕";
     case "memo": return "📝";
+    case "name_updated": return "🏷";
+    case "symbol_updated": return "🏷";
     case "policy_updated": return "📋";
     default: return "●";
   }
@@ -141,6 +237,8 @@ export function getEventLabel(type: B20Event["type"]): string {
     case "supply_cap_updated": return "Cap Updated";
     case "b20_created": return "Token Created";
     case "memo": return "Memo";
+    case "name_updated": return "Name Updated";
+    case "symbol_updated": return "Symbol Updated";
     case "policy_updated": return "Policy Updated";
     default: return "Event";
   }
