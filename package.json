@@ -1,12 +1,21 @@
 {
   "name": "b20-tracker",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Real-time B20 Token Scanner for Base Mainnet with multi-source data integration",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx test-integration.ts",
+    "test:factory": "npx tsx -e 'import {testFactoryIntegration} from \"./test-integration\"; testFactoryIntegration()'",
+    "test:thirdparty": "npx tsx -e 'import {testThirdPartyIntegration} from \"./test-integration\"; testThirdPartyIntegration()'",
+    "test:market": "npx tsx -e 'import {testMarketDataIntegration} from \"./test-integration\"; testMarketDataIntegration()'",
+    "health": "curl http://localhost:3000/api/health | jq",
+    "tokens": "curl http://localhost:3000/api/b20-tokens?limit=10 | jq",
+    "factory": "curl http://localhost:3000/api/factory-tokens?limit=10 | jq",
+    "thirdparty": "curl http://localhost:3000/api/thirdparty-tokens?limit=10 | jq"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
@@ -24,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
+    "tsx": "^4.7.0",
     "typescript": "^5"
   }
 }

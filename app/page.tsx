@@ -13,7 +13,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "b20-only">("b20-only");
 
-  const { tokens, loading: tokensLoading, error: tokensError, currentBlock: tokenBlock } = useB20Tokens();
+  const { tokens, loading: tokensLoading, error: tokensError, currentBlock: tokenBlock, dataSource } = useB20Tokens();
   const { events, loading: eventsLoading, error: eventsError, currentBlock: eventBlock } = useB20Events();
 
   const { stats, blockHeight } = useStats(tokens);
@@ -89,6 +89,20 @@ export default function DashboardPage() {
             {tokensError && (
               <p className="text-xs text-red-400/60 mt-1">{tokensError}</p>
             )}
+          </div>
+        )}
+
+        {/* Data Source Info */}
+        {dataSource && tokens.length > 0 && (
+          <div className="mb-6 rounded-xl border border-blue-500/30 bg-blue-500/10 px-5 py-3">
+            <p className="text-sm text-blue-400">
+              📊 Data source: {dataSource === "factory" ? "B20 Factory Contract" : 
+                            dataSource === "thirdparty" ? "DexScreener/GeckoTerminal" : 
+                            "Block Scanning"}
+              <span className="ml-2 text-xs text-blue-400/60">
+                {tokens.length} tokens loaded
+              </span>
+            </p>
           </div>
         )}
 

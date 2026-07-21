@@ -19,6 +19,22 @@ const B20_ACTIVATION_BLOCK = 25000000;
 // where it left off instead of re-scanning from B20_ACTIVATION_BLOCK.
 const SCAN_CURSOR_KEY = "b20:lastScannedBlock";
 
+// New: Data source configuration
+const DATA_SOURCE = {
+  FACTORY: "factory",      // Direct from B20 Factory contract
+  THIRD_PARTY: "thirdparty", // From DexScreener/GeckoTerminal
+  BLOCK_SCAN: "blockscan",  // Traditional block-by-block scanning (fallback)
+} as const;
+
+type DataSource = (typeof DATA_SOURCE)[keyof typeof DATA_SOURCE];
+
+// Priority order for data sources
+const DATA_SOURCE_PRIORITY: DataSource[] = [
+  DATA_SOURCE.FACTORY,
+  DATA_SOURCE.THIRD_PARTY,
+  DATA_SOURCE.BLOCK_SCAN,
+];
+
 function loadScanCursor(): number {
   if (typeof window === "undefined") return B20_ACTIVATION_BLOCK;
   const raw = window.localStorage.getItem(SCAN_CURSOR_KEY);
@@ -60,69 +76,229 @@ async function fetchMarketOverlay(
   return out;
 }
 
+/**
+ * Fetch tokens from factory API (most efficient method)
+ */
+async function fetchTokensFromFactory(
+  limit: number = 500
+): Promise<B20Token[]> {
+  try {
+    const res = await fetch(
+      `/api/factory-tokens?limit=${limit}&metadata=true`,
+      { cache: "no-store" },
+    );
+    
+    if (!res.ok) {
+      console.warn("Factory API failed, falling back to other sources");
+      return [];
+    }
+    
+    const data = await res.json();
+    return data.map((token: any) => ({
+      address: token.address,
+      name: token.name || "Unknown",
+      symbol: token.symbol || "???",
+      variant: token.variant || "asset",
+      decimals: token.decimals || 18,
+      currency: token.currency,
+      totalSupply: BigInt(token.totalSupply || 0),
+      supplyCap: BigInt(0),
+      creator: token.creator || "",
+      createdAt: token.createdAt || 0,
+      txHash: token.txHash || "",
+      isPaused: token.isPaused || false,
+    })) as B20Token[];
+  } catch (error) {
+    console.error("Error fetching from factory API:", error);
+    return [];
+  }
+}
+
+/**
+ * Fetch tokens from third-party APIs (DexScreener, GeckoTerminal)
+ */
+async function fetchTokensFromThirdParty(
+  limit: number = 100
+): Promise<Partial<B20Token>[]> {
+  try {
+    const res = await fetch(
+      `/api/thirdparty-tokens?limit=${limit}`,
+      { cache: "no-store" },
+    );
+    
+    if (!res.ok) {
+      console.warn("Third-party API failed");
+      return [];
+    }
+    
+    const data = await res.json();
+    return data.map((token: any) => ({
+      address: token.address,
+      name: token.name || "Unknown",
+      symbol: token.symbol || "???",
+      variant: token.variant || "asset",
+    })) as Partial<B20Token>[];
+  } catch (error) {
+    console.error("Error fetching from third-party API:", error);
+    return [];
+  }
+}
+
+/**
+ * Enrich token data with metadata and market data
+ */
+async function enrichTokenData(
+  token: Partial<B20Token>,
+  discoveredRef: React.MutableRefObject<Set<string>>
+): Promise<B20Token | null> {
+  const addrLower = token.address?.toLowerCase();
+  if (!addrLower || discoveredRef.current.has(addrLower)) {
+    return null;
+  }
+  
+  discoveredRef.current.add(addrLower);
+  
+  try {
+    // Get metadata from chain
+    const meta = await fetchTokenMetadata(token.address!);
+    const timestamp = token.createdAt || await getBlockTimestamp(0);
+    const variant = token.variant || detectVariant(token.address!);
+    
+    const enriched: B20Token = {
+      address: token.address!,
+      name: meta.name || token.name || "Unknown",
+      symbol: meta.symbol || token.symbol || "???",
+      variant: variant,
+      decimals: meta.decimals || 18,
+      currency: meta.currency,
+      totalSupply: meta.totalSupply || BigInt(0),
+      supplyCap: BigInt(0),
+      creator: token.creator || "",
+      createdAt: timestamp,
+      txHash: token.txHash || "",
+      isPaused: token.isPaused || false,
+    };
+    
+    return enriched;
+  } catch (error) {
+    console.error(`Error enriching token ${token.address}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Try to discover tokens using multiple sources in priority order
+ */
+async function discoverTokensWithFallback(
+  discoveredRef: React.MutableRefObject<Set<string>>,
+  limit: number = 500
+): Promise<B20Token[]> {
+  const allTokens: B20Token[] = [];
+  
+  // Try each data source in priority order
+  for (const source of DATA_SOURCE_PRIORITY) {
+    if (allTokens.length >= limit) break;
+    
+    try {
+      let tokens: Partial<B20Token>[] = [];
+      
+      switch (source) {
+        case DATA_SOURCE.FACTORY:
+          tokens = await fetchTokensFromFactory(limit);
+          break;
+          
+        case DATA_SOURCE.THIRD_PARTY:
+          tokens = await fetchTokensFromThirdParty(limit);
+          break;
+          
+        case DATA_SOURCE.BLOCK_SCAN:
+          // Fallback to traditional block scanning
+          const latestBlock = await getCurrentBlockNumber();
+          const lastScannedBlock = loadScanCursor();
+          const blocksToScan = Math.min(
+            latestBlock - lastScannedBlock,
+            MAX_TOKEN_DISCOVERY_BATCH
+          );
+          
+          if (blocksToScan > 0) {
+            const newTokens = await discoverB20Tokens(
+              lastScannedBlock,
+              lastScannedBlock + blocksToScan
+            );
+            
+            tokens = newTokens.map(t => ({
+              address: t.address,
+              txHash: t.txHash,
+              createdAt: 0, // Will be set during enrichment
+            }));
+            
+            saveScanCursor(lastScannedBlock + blocksToScan);
+          }
+          break;
+      }
+      
+      // Enrich tokens with metadata
+      for (const token of tokens) {
+        if (allTokens.length >= limit) break;
+        
+        const enriched = await enrichTokenData(token, discoveredRef);
+        if (enriched) {
+          allTokens.push(enriched);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`Error with ${source} source:`, error);
+      continue; // Try next source
+    }
+  }
+  
+  return allTokens;
+}
+
 export function useB20Tokens() {
   const [tokens, setTokens] = useState<B20Token[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastScannedBlock, setLastScannedBlock] = useState<number>(() => loadScanCursor());
   const [currentBlock, setCurrentBlock] = useState<number>(0);
+  const [dataSource, setDataSource] = useState<DataSource | null>(null);
   const discoveredRef = useRef<Set<string>>(new Set());
 
   const discoverTokens = useCallback(async () => {
     try {
+      setLoading(true);
+      setError(null);
+      
       const latestBlock = await getCurrentBlockNumber();
       setCurrentBlock(latestBlock);
-
-      // Calculate how many blocks to scan (limit to prevent timeout)
-      const blocksToScan = Math.min(
-        latestBlock - lastScannedBlock,
-        MAX_TOKEN_DISCOVERY_BATCH
-      );
-
-      if (blocksToScan <= 0) return;
-
-      const newTokens = await discoverB20Tokens(
-        lastScannedBlock,
-        lastScannedBlock + blocksToScan
-      );
-
-      // Fetch metadata for newly discovered tokens
-      const enriched: B20Token[] = [];
-      for (const t of newTokens) {
-        const addrLower = t.address.toLowerCase();
-        if (discoveredRef.current.has(addrLower)) continue;
-        discoveredRef.current.add(addrLower);
-
-        const meta = await fetchTokenMetadata(t.address);
-        const timestamp = await getBlockTimestamp(t.blockNumber);
-        const variant = detectVariant(t.address);
-
-        enriched.push({
-          address: t.address,
-          name: meta.name,
-          symbol: meta.symbol,
-          variant,
-          decimals: meta.decimals,
-          currency: meta.currency,
-          totalSupply: meta.totalSupply,
-          supplyCap: BigInt(0), // fetched separately if needed
-          creator: "", // not available from Transfer logs alone
-          createdAt: timestamp,
-          txHash: t.txHash,
-          isPaused: false,
-        });
-      }
-
-      if (enriched.length > 0) {
-        // Fire market overlay fetch for newly discovered tokens (best-effort)
+      
+      // Try to discover tokens using the best available source
+      const newTokens = await discoverTokensWithFallback(discoveredRef, 500);
+      
+      if (newTokens.length > 0) {
+        // Determine which source was used
+        const factoryTokens = await fetchTokensFromFactory(1);
+        if (factoryTokens.length > 0) {
+          setDataSource(DATA_SOURCE.FACTORY);
+        } else {
+          const thirdPartyTokens = await fetchTokensFromThirdParty(1);
+          if (thirdPartyTokens.length > 0) {
+            setDataSource(DATA_SOURCE.THIRD_PARTY);
+          } else {
+            setDataSource(DATA_SOURCE.BLOCK_SCAN);
+          }
+        }
+        
+        // Fetch market overlay for newly discovered tokens
         const overlay = await fetchMarketOverlay(
-          enriched.map((t) => t.address),
+          newTokens.map((t) => t.address),
         );
-        const withMarket = enriched.map((t) => {
+        const withMarket = newTokens.map((t) => {
           const md = overlay.get(t.address.toLowerCase());
           return md ? { ...t, marketData: md } : t;
         });
-
+        
         setTokens((prev) => {
           const existing = new Set(prev.map((t) => t.address.toLowerCase()));
           const unique = withMarket.filter(
@@ -131,19 +307,18 @@ export function useB20Tokens() {
           return [...unique, ...prev];
         });
       }
-
-      setLastScannedBlock(lastScannedBlock + blocksToScan);
-      saveScanCursor(lastScannedBlock + blocksToScan);
-      setError(null);
+      
+      setLoading(false);
     } catch (err) {
       console.error("Error discovering B20 tokens:", err);
       setError(err instanceof Error ? err.message : "Failed to discover tokens");
+      setLoading(false);
     }
-  }, [lastScannedBlock]);
+  }, []);
 
   // Initial discovery
   useEffect(() => {
-    discoverTokens().then(() => setLoading(false));
+    discoverTokens();
   }, [discoverTokens]);
 
   // Poll for new tokens
@@ -219,5 +394,5 @@ export function useB20Tokens() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokens.length === 0 ? "empty" : "populated"]);
 
-  return { tokens, loading, error, currentBlock, lastScannedBlock };
+  return { tokens, loading, error, currentBlock, lastScannedBlock, dataSource };
 }
