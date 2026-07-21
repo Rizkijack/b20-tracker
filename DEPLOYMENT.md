@@ -73,14 +73,28 @@ Saat diminta, masukkan:
    - **Framework Preset**: Next.js
    - **Build Command**: `npm run build`
    - **Output Directory**: (default)
-6. **Environment Variables** (opsional, sudah ada default):
+6. **Environment Variables**:
    - `NEXT_PUBLIC_BASE_RPC_URL` = `https://mainnet.base.org`
+   - **Penting:** API keys (`BIRDEYE_API_KEY`, `COINMARKETCAP_API_KEY`, `COINGECKO_API_KEY`) **jangan di-paste di file komit**.
+     Masukkan via Vercel Dashboard → Settings → Environment Variables. Variable ini bersifat server-only dan tidak pernah dikirim ke browser.
 7. Klik **Deploy** 🎉
 
 Tunggu 1-2 menit sampai build selesai. Website Anda akan live di:
 ```
 https://b20-tracker-USERNAME.vercel.app
 ```
+
+> 🔐 **API Keys & Environment Variables**
+> Khusus di Vercel: setelah deploy pertama selesai, buka project dashboard → tab **Settings** → **Environment Variables**.
+> Tambahkan variable ini untuk mengaktifkan market-data premium:
+> - `BIRDEYE_API_KEY` → paste key dari [Birdeye Profile](https://birdeye.so/user/profile)
+> - `COINMARKETCAP_API_KEY` → paste key dari [CMC Developer](https://pro.coinmarketcap.com/signup)
+> - `COINGECKO_API_KEY` → (opsional) paste key dari [CoinGecko](https://www.coingecko.com/en/api/pricing)
+> - `UPSTASH_REDIS_REST_URL` → (opsional) URL dari [Upstash Console](https://console.upstash.com/redis)
+> - `UPSTASH_REDIS_REST_TOKEN` → (opsional) REST token dari Upstash Console
+> - `REDIS_URL` / `UPSTASH_URL` → (legacy fallback) hanya URL saja (jarang dipakai)
+>
+> Jangan simpan keys di file yang dikomit (`.env.example`, `.env`). Vercel menyimpan ini secara encrypted.
 
 ---
 

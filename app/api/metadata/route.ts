@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Contract } from "ethers";
-import { getProvider } from "@/lib/b20-server";
+import { getProvider } from "@/lib/b20-client";
 import { B20_TOKEN_ABI } from "@/lib/constants";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 

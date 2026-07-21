@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { id } from "ethers";
-import { getProvider } from "@/lib/b20-server";
+import { getProvider } from "@/lib/b20-client";
 import { B20_FACTORY_ADDRESS } from "@/lib/constants";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 

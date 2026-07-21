@@ -13,6 +13,7 @@ import {
 } from "@/lib/event-decoder";
 import { EXPLORER_URL } from "@/lib/constants";
 import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/api-client";
+import PriceChart from "@/components/PriceChart";
 
 // Internal type for client-side metadata (totalSupply as bigint)
 interface TokenMeta {
@@ -84,7 +85,7 @@ export default function TokenDetailContent({
   initialMetadata,
   initialEvents,
 }: TokenDetailContentProps) {
-  const [activeTab, setActiveTab] = useState<"events" | "info">("events");
+  const [activeTab, setActiveTab] = useState<"events" | "chart" | "info">("events");
   const [metadata, setMetadata] = useState<TokenMeta | null>(
     initialMetadata ? convertMetadata(initialMetadata) : null
   );
@@ -363,6 +364,20 @@ export default function TokenDetailContent({
                 )}
               </button>
               <button
+                onClick={() => setActiveTab("chart")}
+                className={`px-4 py-2.5 text-xs font-semibold transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50`}
+                style={{ color: activeTab === "chart" ? "var(--accent-blue)" : "var(--text-tertiary)" }}
+                role="tab"
+                aria-selected={activeTab === "chart"}
+                aria-controls="chart-tab-panel"
+                id="chart-tab"
+              >
+                Price Chart
+                {activeTab === "chart" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full" style={{ backgroundColor: "var(--accent-blue)" }}></span>
+                )}
+              </button>
+              <button
                 onClick={() => setActiveTab("info")}
                 className={`px-4 py-2.5 text-xs font-semibold transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]/50`}
                 style={{ color: activeTab === "info" ? "var(--accent-blue)" : "var(--text-tertiary)" }}
@@ -379,7 +394,7 @@ export default function TokenDetailContent({
             </div>
 
             {/* Tab Content */}
-            {activeTab === "events" ? (
+            {activeTab === "events" && (
               <div className="glass-card overflow-hidden" role="tabpanel" id="events-tab-panel" aria-labelledby="events-tab">
                 <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
                   <div className="flex items-center gap-2.5">
@@ -465,7 +480,20 @@ export default function TokenDetailContent({
                   </div>
                 )}
               </div>
-            ) : (
+            )}
+            {activeTab === "chart" && (
+              <div role="tabpanel" id="chart-tab-panel" aria-labelledby="chart-tab">
+                {metadata.currency ? (
+                  <div className="glass-card p-5 text-center">
+                    <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Price chart not available for stablecoins</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Stablecoin price is pegged to {metadata.currency}</p>
+                  </div>
+                ) : (
+                  <PriceChart address={address} />
+                )}
+              </div>
+            )}
+            {activeTab === "info" && (
               /* Info Tab */
               <div className="glass-card p-5" role="tabpanel" id="info-tab-panel" aria-labelledby="info-tab">
                 <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Token Information</h3>

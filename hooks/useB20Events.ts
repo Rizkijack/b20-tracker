@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { B20Event } from "@/lib/types";
 import {
-  fetchRecentB20Transfers,
   getCurrentBlockNumber,
   getBlockTimestamp,
+  fetchRecentB20Transfers,
 } from "@/lib/api-client";
 import { decodeAnyEvent } from "@/lib/event-decoder";
 import {
@@ -20,14 +20,44 @@ export function useB20Events() {
   const [currentBlock, setCurrentBlock] = useState<number>(0);
   const lastBlockRef = useRef<number>(0);
   const knownIdsRef = useRef<Set<string>>(new Set());
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const pollEvents = useCallback(async () => {
+  const processRawEvent = useCallback(async (raw: {
+    id: string;
+    address: string;
+    topics: string[];
+    data: string;
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+  }) => {
+    const event = decodeAnyEvent({
+      ...raw,
+      address: raw.address,
+    });
+    if (!event) return null;
+    if (knownIdsRef.current.has(event.id)) return null;
+    knownIdsRef.current.add(event.id);
+
+    // Get timestamp
+    try {
+      event.timestamp = await getBlockTimestamp(raw.blockNumber);
+    } catch {
+      event.timestamp = Math.floor(Date.now() / 1000);
+    }
+
+    return event;
+  }, []);
+
+  // Initial fetch via REST (for immediate data)
+  const initialFetch = useCallback(async () => {
     try {
       const latestBlock = await getCurrentBlockNumber();
       setCurrentBlock(latestBlock);
 
       if (lastBlockRef.current === 0) {
-        lastBlockRef.current = latestBlock - 100; // initial lookback
+        lastBlockRef.current = latestBlock - 100;
       }
 
       const fromBlock = lastBlockRef.current + 1;
@@ -39,28 +69,24 @@ export function useB20Events() {
 
       const decodedEvents: B20Event[] = [];
       for (const log of logs) {
-        const event = decodeAnyEvent(log);
+        const event = await processRawEvent({
+          id: `${log.txHash}-${log.logIndex}`,
+          address: log.address || "",
+          topics: log.topics,
+          data: log.data,
+          blockNumber: log.blockNumber,
+          txHash: log.txHash,
+          logIndex: log.logIndex,
+        });
         if (!event) continue;
-        if (knownIdsRef.current.has(event.id)) continue;
-        knownIdsRef.current.add(event.id);
-
-        // Get timestamp
-        try {
-          event.timestamp = await getBlockTimestamp(log.blockNumber);
-        } catch {
-          event.timestamp = Math.floor(Date.now() / 1000);
-        }
-
         decodedEvents.push(event);
       }
 
       if (decodedEvents.length > 0) {
         setEvents((prev) => {
-          const newEvents = decodedEvents.reverse(); // newest first
+          const newEvents = decodedEvents.reverse();
           const combined = [...newEvents, ...prev];
-          // Keep only MAX_LIVE_EVENTS
           if (combined.length > MAX_LIVE_EVENTS) {
-            // Clean up known IDs ref
             const removed = combined.slice(MAX_LIVE_EVENTS);
             removed.forEach((e) => knownIdsRef.current.delete(e.id));
             return combined.slice(0, MAX_LIVE_EVENTS);
@@ -70,23 +96,96 @@ export function useB20Events() {
       }
 
       lastBlockRef.current = latestBlock;
-      setError(null);
     } catch (err) {
-      console.error("Error polling events:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch events");
+      console.error("Initial fetch error:", err);
     }
-  }, []);
+  }, [processRawEvent]);
 
-  // Initial poll
+  // Connect to SSE stream
   useEffect(() => {
-    pollEvents().then(() => setLoading(false));
-  }, [pollEvents]);
+    let mounted = true;
 
-  // Continuous polling
+    const connect = () => {
+      if (!mounted) return;
+
+      const es = new EventSource("/api/events/stream");
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        console.log("SSE connected");
+      };
+
+      es.onmessage = async (e) => {
+        try {
+          const data = JSON.parse(e.data);
+
+          // Heartbeat
+          if (data.type === "heartbeat") {
+            setCurrentBlock(data.block);
+            return;
+          }
+
+          // Event
+          const event = await processRawEvent(data);
+          if (!event) return;
+
+          setEvents((prev) => {
+            const combined = [event, ...prev];
+            if (combined.length > MAX_LIVE_EVENTS) {
+              const removed = combined.slice(MAX_LIVE_EVENTS);
+              removed.forEach((e) => knownIdsRef.current.delete(e.id));
+              return combined.slice(0, MAX_LIVE_EVENTS);
+            }
+            return combined;
+          });
+        } catch (err) {
+          console.error("SSE message error:", err);
+        }
+      };
+
+      es.onerror = (err) => {
+        console.error("SSE error:", err);
+        es.close();
+        eventSourceRef.current = null;
+
+        // Reconnect after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (mounted) connect();
+        }, 5000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      mounted = false;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [processRawEvent]);
+
+  // Initial fetch
   useEffect(() => {
-    const interval = setInterval(pollEvents, POLLING_INTERVAL);
+    initialFetch().then(() => setLoading(false));
+  }, [initialFetch]);
+
+  // Fallback polling (if SSE fails, keep polling as backup)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      // Only poll if we haven't received events recently (SSE might be dead)
+      // Simple heuristic: if lastBlockRef hasn't updated in 2 intervals, force poll
+      const now = Date.now();
+      if (!eventSourceRef.current || now - (lastBlockRef.current as any) > POLLING_INTERVAL * 2) {
+        await initialFetch();
+      }
+    }, POLLING_INTERVAL);
     return () => clearInterval(interval);
-  }, [pollEvents]);
+  }, [initialFetch]);
 
   return { events, loading, error, currentBlock };
 }

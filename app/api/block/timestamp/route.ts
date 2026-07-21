@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProvider } from "@/lib/b20-server";
+import { getProvider } from "@/lib/b20-client";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
 export const dynamic = "force-dynamic";

@@ -1,3 +1,13 @@
+// lib/b20-client.ts
+// Shared ethers.js provider & blockchain utilities.
+//
+// ⚠️ This file is imported by BOTH server-side (API routes) AND client-side code.
+// - Server-side: getProvider() returns a JsonRpcProvider for direct RPC calls.
+// - Client-side: api-client.ts proxies through Next.js API routes to hide RPC URLs.
+//
+// Do NOT add server-only env vars (API keys, Redis URLs) to this file.
+// Server-only logic lives in lib/market-data.ts, lib/server-cache.ts, etc.
+
 import { JsonRpcProvider, Contract, id } from "ethers";
 import {
   BASE_RPC_URLS,
