@@ -1,27 +1,29 @@
-// app/api/b20-tokens/route.ts
-// GET /api/b20-tokens
-// Returns recently-created B20 tokens on Base Mainnet with real-time market
-// data (DexScreener + GeckoTerminal).
+// app/api/b20-discover/route.ts
+// GET /api/b20-discover?limit=100&window=50000
+// Returns recently-created B20 tokens on Base Mainnet enriched with real-time
+// market data from DexScreener + GeckoTerminal.
 //
-// Uses lib/b20-discovery.ts which:
-//   1. Scans B20Created events from the factory precompile (chunked to respect
-//      the 10k-block eth_getLogs limit — the previous implementation scanned
-//      from block 0 and timed out).
-//   2. Enriches with DexScreener (batched) + GeckoTerminal market data.
+// This is the canonical real-time B20 discovery endpoint. It:
+//   1. Scans B20Created events from the B20 factory precompile (authoritative
+//      on-chain discovery, chunked to respect the 10k-block eth_getLogs limit).
+//   2. Enriches each token with live price/liquidity/volume from DexScreener
+//      (batched, free, no key) and GeckoTerminal (per-token fallback).
+//
+// Tokens without DEX liquidity are still returned (hasLiquidity=false) — they
+// are real B20 tokens, just not yet traded on a DEX.
 
 import { NextResponse } from "next/server";
 import { getRecentB20TokensWithMarket } from "@/lib/b20-discovery";
 
 export const runtime = "nodejs";
-export const revalidate = 30; // Revalidate every 30 seconds
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "100");
   const window = parseInt(searchParams.get("window") || "50000");
-  const includeMarket = searchParams.get("market") !== "false";
 
-  // Validate inputs
   if (isNaN(limit) || limit <= 0 || limit > 500) {
     return NextResponse.json(
       { error: "Invalid limit. Must be between 1 and 500" },
@@ -41,30 +43,22 @@ export async function GET(request: Request) {
       limit,
     );
 
-    // When market data is explicitly disabled, strip it.
-    const data = includeMarket
-      ? tokens
-      : tokens.map(({ marketData: _m, ...rest }) => rest);
-
     return NextResponse.json(
       {
         success: true,
-        count: data.length,
+        count: tokens.length,
         currentBlock,
         source,
-        data,
+        tokens,
         timestamp: Date.now(),
       },
       { status: 200 },
     );
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("B20 tokens API error:", error);
+    console.error("B20 discover error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: `Failed to fetch B20 tokens: ${msg}`,
-      },
+      { success: false, error: `Failed to discover B20 tokens: ${msg}` },
       { status: 500 },
     );
   }

@@ -1,8 +1,50 @@
 // lib/advanced-cache.ts
 // Advanced caching system with Redis, in-memory cache, and intelligent TTL management
+//
+// NOTE: the optional `redis` client is loaded lazily so this module compiles and
+// runs even when the `redis` package is not installed (this project ships with
+// `@upstash/redis` instead). The in-memory + Upstash path in ./server-cache.ts
+// remains the primary cache; this module layers richer stats on top of it.
 
-import { createClient, RedisClientType } from "redis";
 import { cacheGet as simpleCacheGet, cacheSet as simpleCacheSet, TTL } from "./server-cache";
+
+// Lazily resolve the optional `redis` driver. Returns null when unavailable.
+type RedisClientType = {
+  get: (key: string) => Promise<string | null>;
+  set: (key: string, value: string, mode?: string, ttl?: number) => Promise<unknown>;
+  setEx: (key: string, ttl: number, value: string) => Promise<unknown>;
+  del: (key: string) => Promise<number>;
+  ping: () => Promise<string>;
+  quit: () => Promise<void>;
+};
+let _redisPromise: Promise<RedisClientType | null> | null = null;
+async function getRedisClient(): Promise<RedisClientType | null> {
+  if (_redisPromise) return _redisPromise;
+  _redisPromise = (async () => {
+    try {
+      // Load the optional `redis` driver through a runtime dynamic import
+      // guarded so a missing package degrades to null instead of throwing.
+      // `Function("return import(...)")` keeps TypeScript from resolving the
+      // specifier at type-check time (the package may not be installed).
+      const dynImport = new Function("m", "return import(m)") as (m: string) => Promise<unknown>;
+      const mod = (await dynImport("redis")) as {
+        createClient: (opts: { url: string }) => RedisClientType & {
+          on: (ev: string, cb: () => void) => unknown;
+          connect: () => Promise<void>;
+        };
+      };
+      const url = process.env.REDIS_URL || process.env.UPSTASH_REDIS_REST_URL;
+      if (!url) return null;
+      const client = mod.createClient({ url });
+      client.on("error", () => {});
+      await client.connect();
+      return client;
+    } catch {
+      return null;
+    }
+  })();
+  return _redisPromise;
+}
 
 // Cache configuration
 export interface CacheConfig {
@@ -194,16 +236,22 @@ class RedisCache {
     }
   }
 
-  private async connect(url: string, token: string): Promise<void> {
+  private async connect(url: string, _token: string): Promise<void> {
     try {
-      // Upstash Redis REST client
-      this.client = createClient({
-        url,
-        token,
-      }) as RedisClientType;
-      
+      // Lazy-load the optional redis driver (null when the package isn't
+      // installed). The url drives the connection; the token is used by the
+      // Upstash REST adapter in ./server-cache.ts, not by the node-redis client.
+      process.env.REDIS_URL = process.env.REDIS_URL || url;
+      this.client = await getRedisClient();
+
+      if (!this.client) {
+        this.connected = false;
+        this.connectionError = "redis package not installed";
+        return;
+      }
+
       // Test connection
-      await this.client.ping();
+      await this.client.get("__b20_ping__");
       this.connected = true;
       this.connectionError = null;
       console.log("✅ Redis cache connected successfully");
@@ -523,7 +571,7 @@ export async function cacheSet<T>(key: string, value: T, ttl: number): Promise<v
 export async function getWithCache<T>(
   key: string,
   fetchFn: () => Promise<T>,
-  ttl: number = TTL.DEFAULT
+  ttl: number = TTL.MARKET
 ): Promise<T> {
   const cached = await advancedCache.get<T>(key);
   if (cached !== null) {
@@ -538,7 +586,7 @@ export async function getWithCache<T>(
 export async function getWithCacheSimple<T>(
   key: string,
   fetchFn: () => Promise<T>,
-  ttl: number = TTL.DEFAULT
+  ttl: number = TTL.MARKET
 ): Promise<T> {
   // Use simple cache for backward compatibility
   const cached = await simpleCacheGet<T>(key);

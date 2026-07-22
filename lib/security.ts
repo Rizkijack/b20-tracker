@@ -414,7 +414,10 @@ class SecurityMiddleware {
     }
     
     // Fallback to connection IP (may not be available in all environments)
-    return request.ip || "unknown";
+    // Note: NextRequest.ip was removed in Next.js 16; fall back to headers.
+    return request.headers.get("x-forwarded-for")?.split(",")[0].trim()
+      || request.headers.get("x-real-ip")
+      || "unknown";
   }
 
   /**

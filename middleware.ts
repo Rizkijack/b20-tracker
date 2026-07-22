@@ -22,7 +22,7 @@ const EXCLUDED_PATHS = [
 ];
 
 // Paths that require API key
-const API_KEY_REQUIRED_PATHS = [
+const API_KEY_REQUIRED_PATHS: string[] = [
   // Add paths that require API key protection here
   // "/api/private/*"
 ];

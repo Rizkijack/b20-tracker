@@ -382,10 +382,10 @@ export function getRPCProvider(): JsonRpcProvider {
 }
 
 // Get RPC configuration for monitoring
-export function getRPCConfiguration(): RPCConfig[] {
+export function getRPCConfiguration(): Array<{ url: string; healthy: boolean } & RPCMetrics> {
   return [...rpcPool.getHealthStatus().map(({ url, healthy, metrics }) => ({
-    url,
     healthy,
     ...metrics,
+    url,
   }))];
 }

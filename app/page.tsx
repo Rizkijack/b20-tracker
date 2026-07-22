@@ -96,11 +96,11 @@ export default function DashboardPage() {
         {dataSource && tokens.length > 0 && (
           <div className="mb-6 rounded-xl border border-blue-500/30 bg-blue-500/10 px-5 py-3">
             <p className="text-sm text-blue-400">
-              📊 Data source: {dataSource === "factory" ? "B20 Factory Contract" : 
-                            dataSource === "thirdparty" ? "DexScreener/GeckoTerminal" : 
-                            "Block Scanning"}
+              📊 Data source: {dataSource === "factory" ? "B20 Factory + DexScreener/GeckoTerminal" :
+                            dataSource === "dex" ? "DexScreener/GeckoTerminal" :
+                            "B20 Factory Contract"}
               <span className="ml-2 text-xs text-blue-400/60">
-                {tokens.length} tokens loaded
+                {tokens.length} tokens loaded · {tokens.filter((t) => t.marketData).length} with live market data
               </span>
             </p>
           </div>
