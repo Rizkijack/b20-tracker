@@ -13,6 +13,7 @@ import {
   BASE_RPC_URLS,
   B20_TOKEN_ABI,
   B20_ADDRESS_PREFIX,
+  B20_FACTORY_ADDRESS,
   B20Variant,
   ALL_B20_EVENT_TOPICS,
 } from "./constants";
@@ -35,7 +36,7 @@ export function getProvider(): JsonRpcProvider {
 }
 
 // Run an RPC call against providers with rotation + retry on transient failures.
-async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promise<T> {
+export async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < providers.length * 2; attempt++) {
     const p = nextProvider();
@@ -178,18 +179,44 @@ export async function fetchTokenBalance(tokenAddress: string, walletAddress: str
   }
 }
 
-// ─── Discover all B20 tokens from logs ─────────────────────────────────────
-// Scans Transfer events from B20-prefixed addresses in recent blocks
+// ─── Discover all B20 tokens from factory logs ────────────────────────────
+// Scans B20Created events emitted by the B20_FACTORY precompile
+// (0xB20f000000000000000000000000000000000000). This is the canonical, most
+// efficient discovery path: the factory emits exactly one B20Created event
+// per token, with the token address, variant, name, symbol and decimals all
+// in the log payload — no per-token metadata RPC round-trips needed.
+//
+// Canonical event (base-std IB20Factory.sol):
+//   event B20Created(address indexed token, uint8 indexed variant, string name,
+//                    string symbol, uint8 decimals, bytes variantEventParams);
 export async function discoverB20Tokens(
   fromBlock: number,
   toBlock: number,
-): Promise<{ address: string; blockNumber: number; txHash: string }[]> {
-  const transferTopic = id("Transfer(address,address,uint256)");
+): Promise<{
+  address: string;
+  blockNumber: number;
+  txHash: string;
+  variant: number;
+  name: string;
+  symbol: string;
+  decimals: number;
+}[]> {
+  // B20Created topic hash, computed from the canonical signature.
+  const b20CreatedTopic = id("B20Created(address,uint8,string,string,uint8,bytes)");
 
-  // Scan in chunks of 2000 blocks (Base has 2-second blocks)
-  const CHUNK_SIZE = 2000;
-  const tokens: { address: string; blockNumber: number; txHash: string }[] = [];
+  const CHUNK_SIZE = 5000; // factory logs are sparse; larger chunks are safe
+  const tokens: {
+    address: string;
+    blockNumber: number;
+    txHash: string;
+    variant: number;
+    name: string;
+    symbol: string;
+    decimals: number;
+  }[] = [];
   const seen = new Set<string>();
+  const { AbiCoder } = await import("ethers");
+  const coder = new AbiCoder();
 
   for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
     const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
@@ -198,23 +225,47 @@ export async function discoverB20Tokens(
         p.getLogs({
           fromBlock: start,
           toBlock: end,
-          topics: [transferTopic],
+          address: B20_FACTORY_ADDRESS,
+          topics: [b20CreatedTopic],
         }),
       );
 
       for (const log of logs) {
-        const addr = log.address.toLowerCase();
-        if (isB20Address(addr) && !seen.has(addr)) {
-          seen.add(addr);
-          tokens.push({
-            address: log.address,
-            blockNumber: Number(log.blockNumber),
-            txHash: log.transactionHash ?? "",
-          });
+        // topics[1] = indexed token address (padded to 32 bytes)
+        if (!log.topics || log.topics.length < 3) continue;
+        const tokenAddress = "0x" + log.topics[1].slice(26).toLowerCase();
+        if (seen.has(tokenAddress)) continue;
+        seen.add(tokenAddress);
+
+        const variant = parseInt(log.topics[2], 16);
+        let name = "Unknown";
+        let symbol = "???";
+        let decimals = 18;
+        try {
+          const dataHex = log.data.startsWith("0x") ? log.data : "0x" + log.data;
+          const decoded = coder.decode(
+            ["string", "string", "uint8", "bytes"],
+            dataHex,
+          );
+          name = decoded[0] || "Unknown";
+          symbol = decoded[1] || "???";
+          decimals = Number(decoded[2]) || 18;
+        } catch {
+          // fall back to defaults if decode fails
         }
+
+        tokens.push({
+          address: tokenAddress,
+          blockNumber: Number(log.blockNumber),
+          txHash: log.transactionHash ?? "",
+          variant,
+          name,
+          symbol,
+          decimals,
+        });
       }
     } catch (err) {
-      console.error(`Error scanning blocks ${start}-${end}:`, err);
+      console.error(`Error scanning factory logs ${start}-${end}:`, err);
     }
   }
 
@@ -322,9 +373,10 @@ export async function fetchRecentB20Transfers(
 }
 
 // ─── Detect token variant from address ─────────────────────────────────────
-// Canonical B20 layout: 0xB20f + 9 zero bytes (10-byte prefix) + 1 variant byte
-// + 9-byte keccak256 suffix = 20 bytes / 40 hex chars. The variant byte sits at
-// hex positions [20,22) (byte 10). ASSET = 0x00, STABLECOIN = 0x01.
+// Canonical B20 layout: 0xb200 prefix (2 bytes) + 8 zero bytes + 1 variant
+// byte + 9-byte hash suffix = 20 bytes / 40 hex chars. The variant byte sits
+// at hex positions [20,22) (byte 10). ASSET = 0x00 -> 0xb200…, STABLECOIN
+// = 0x01 -> 0xb201…. Verified live against the factory precompile.
 export function detectVariant(address: string): "asset" | "stablecoin" {
   const cleaned = address.toLowerCase().replace("0x", "");
   // A full B20 address is 40 hex chars; anything shorter is not a valid B20 address.

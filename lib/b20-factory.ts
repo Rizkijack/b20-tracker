@@ -1,353 +1,126 @@
 // lib/b20-factory.ts
-// Direct integration with B20 Token Factory on Base Mainnet
-// This provides real-time discovery of B20 tokens without block scanning
+// B20 Token Factory integration for Base Mainnet.
+//
+// The B20 factory is a precompile at 0xB20f000000000000000000000000000000000000
+// that emits B20Created(address indexed token, uint8 indexed variant, string name,
+// string symbol, uint8 decimals, bytes variantEventParams) for every token it
+// creates. This module wraps discovery of those events.
+//
+// NOTE: the canonical, decoder-correct implementation lives in
+// lib/b20-client.ts::discoverB20Tokens. This module re-exports a thin,
+// metadata-aware wrapper so server routes can fetch tokens + timestamps in
+// one call without a per-token metadata RPC storm (the event already carries
+// name/symbol/decimals/variant).
 
-import { Contract, JsonRpcProvider, id } from "ethers";
-import { 
-  B20_FACTORY_ADDRESS, 
-  B20_FACTORY_ABI,
-  B20_ADDRESS_PREFIX,
-  BASE_RPC_URLS 
-} from "./constants";
+import { getProvider, discoverB20Tokens, getBlockTimestamp } from "./b20-client";
 import { cacheGet, cacheSet, TTL } from "./server-cache";
 import type { B20Token } from "./types";
 
-// Cache key for factory-based token discovery
-const FACTORY_TOKENS_CACHE_KEY = "b20:factory:tokens";
-const FACTORY_EVENTS_CACHE_KEY = "b20:factory:events";
-
-// Singleton provider for factory calls
-function getFactoryProvider(): JsonRpcProvider {
-  return new JsonRpcProvider(BASE_RPC_URLS[0], 8453);
+// Shape returned by discoverB20Tokens (matches the B20Created event payload).
+export interface FactoryToken {
+  address: string;
+  blockNumber: number;
+  txHash: string;
+  variant: number;
+  name: string;
+  symbol: string;
+  decimals: number;
 }
 
 /**
- * Get all B20 tokens created through the factory
- * Uses the factory's event logs to discover tokens efficiently
+ * Discover B20 tokens created in the given block range by scanning the
+ * factory's B20Created events. Returns token address + variant + name +
+ * symbol + decimals straight from the event — no per-token RPC round-trips.
+ *
+ * This is a thin, typed re-export of lib/b20-client.ts::discoverB20Tokens.
  */
 export async function getB20TokensFromFactory(
   limit: number = 1000,
-  fromBlock: number = 0
-): Promise<{ address: string; creator: string; variant: number; salt: string; blockNumber: number; txHash: string }[]> {
-  const cacheKey = `${FACTORY_TOKENS_CACHE_KEY}:${limit}:${fromBlock}`;
-  
-  // Try cache first
-  const cached = await cacheGet<{ address: string; creator: string; variant: number; salt: string; blockNumber: number; txHash: string }[]>(cacheKey);
-  if (cached) return cached;
+  fromBlock: number = 0,
+): Promise<FactoryToken[]> {
+  const provider = getProvider();
+  const currentBlock = await provider.getBlockNumber();
+  const toBlock = fromBlock > 0 ? fromBlock + limit * 50 : currentBlock;
 
-  try {
-    const provider = getFactoryProvider();
-    const factoryContract = new Contract(B20_FACTORY_ADDRESS, B20_FACTORY_ABI, provider);
-    
-    // Get B20Created events from the factory
-    const b20CreatedTopic = id("B20Created(address,address,uint8,bytes32)");
-    
-    const currentBlock = await provider.getBlockNumber();
-    const startBlock = fromBlock > 0 ? fromBlock : Math.max(0, currentBlock - 100000); // Scan last 100k blocks by default
-    
-    const tokens: { address: string; creator: string; variant: number; salt: string; blockNumber: number; txHash: string }[] = [];
-    const seen = new Set<string>();
-    
-    // Scan in chunks to avoid RPC limits
-    const CHUNK_SIZE = 5000;
-    for (let block = startBlock; block <= currentBlock && tokens.length < limit; block += CHUNK_SIZE) {
-      const endBlock = Math.min(block + CHUNK_SIZE - 1, currentBlock);
-      
-      try {
-        const logs = await provider.getLogs({
-          fromBlock: block,
-          toBlock: endBlock,
-          address: B20_FACTORY_ADDRESS,
-          topics: [b20CreatedTopic],
-        });
-        
-        for (const log of logs) {
-          if (log.topics.length >= 4 && log.address.toLowerCase() === B20_FACTORY_ADDRESS.toLowerCase()) {
-            const tokenAddress = `0x${log.topics[1].slice(-40)}`;
-            const creator = `0x${log.topics[2].slice(-40)}`;
-            const variant = Number(BigInt(log.topics[3]));
-            
-            // Extract salt and other params from log data
-            const salt = log.data.slice(0, 66); // First 32 bytes as hex string
-            const txHash = log.transactionHash || "";
-            const blockNumber = Number(log.blockNumber);
-            
-            if (!seen.has(tokenAddress.toLowerCase()) && 
-                tokenAddress.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase())) {
-              seen.add(tokenAddress.toLowerCase());
-              tokens.push({
-                address: tokenAddress,
-                creator,
-                variant,
-                salt,
-                blockNumber,
-                txHash,
-              });
-              
-              if (tokens.length >= limit) break;
-            }
-          }
-        }
-        
-        if (tokens.length >= limit) break;
-      } catch (error) {
-        console.error(`Error fetching factory logs for blocks ${block}-${endBlock}:`, error);
-        // Continue with next chunk
-      }
-    }
-    
-    // Cache for 5 minutes
-    await cacheSet(cacheKey, tokens, TTL.TOKEN_DISCOVERY);
-    return tokens;
-  } catch (error) {
-    console.error("Error fetching B20 tokens from factory:", error);
-    return [];
-  }
+  // discoverB20Tokens scans [fromBlock, toBlock] for B20Created logs.
+  const discovered = await discoverB20Tokens(
+    Math.max(0, fromBlock),
+    Math.min(toBlock, currentBlock),
+  );
+
+  // Most-recent first, capped to `limit`.
+  return discovered
+    .sort((a, b) => b.blockNumber - a.blockNumber)
+    .slice(0, limit);
 }
 
 /**
- * Get B20 tokens from factory with metadata
- * Combines factory data with on-chain metadata
+ * Discover B20 tokens and resolve their creation timestamps. Returns full
+ * B20Token objects (without marketData — that's layered on by the caller).
+ *
+ * Timestamps are fetched per unique block (cached), so a batch of 500 tokens
+ * created across ~50 blocks only triggers ~50 cached getBlock calls, not 500.
  */
 export async function getB20TokensWithMetadata(
-  limit: number = 500
+  limit: number = 500,
+  fromBlock: number = 0,
 ): Promise<B20Token[]> {
-  const factoryTokens = await getB20TokensFromFactory(limit);
+  const cacheKey = `b20:factory:meta:${limit}:${fromBlock}`;
+  const cached = await cacheGet<B20Token[]>(cacheKey);
+  if (cached) return cached;
+
+  const discovered = await getB20TokensFromFactory(limit, fromBlock);
+
+  // Resolve block timestamps (cached per block) without a per-token RPC storm.
+  const blockTsCache = new Map<number, number>();
   const tokens: B20Token[] = [];
-  
-  for (const factoryToken of factoryTokens) {
-    try {
-      // Try to get basic metadata from the token contract
-      const provider = getFactoryProvider();
-      const tokenContract = new Contract(factoryToken.address, [
-        "function name() view returns (string)",
-        "function symbol() view returns (string)",
-        "function decimals() view returns (uint8)",
-        "function totalSupply() view returns (uint256)",
-        "function currency() view returns (string)",
-      ], provider);
-      
-      const [name, symbol, decimals, totalSupply] = await Promise.all([
-        tokenContract.name.staticCall().catch(() => "Unknown"),
-        tokenContract.symbol.staticCall().catch(() => "???"),
-        tokenContract.decimals.staticCall().catch(() => 18),
-        tokenContract.totalSupply.staticCall().catch(() => BigInt(0)),
-      ]);
-      
-      let currency: string | undefined;
-      try {
-        currency = await tokenContract.currency.staticCall();
-      } catch {
-        // Not a stablecoin
+  for (const t of discovered) {
+    let createdAt = 0;
+    if (t.blockNumber > 0) {
+      if (blockTsCache.has(t.blockNumber)) {
+        createdAt = blockTsCache.get(t.blockNumber)!;
+      } else {
+        try {
+          createdAt = await getBlockTimestamp(t.blockNumber);
+          blockTsCache.set(t.blockNumber, createdAt);
+        } catch {
+          createdAt = 0;
+        }
       }
-      
-      const variant = factoryToken.variant === 1 ? "stablecoin" : "asset";
-      const blockTimestamp = await getBlockTimestamp(factoryToken.blockNumber);
-      
-      tokens.push({
-        address: factoryToken.address,
-        name: name || "Unknown",
-        symbol: symbol || "???",
-        variant,
-        decimals: Number(decimals) || 18,
-        currency,
-        totalSupply: totalSupply ?? BigInt(0),
-        supplyCap: BigInt(0),
-        creator: factoryToken.creator,
-        createdAt: blockTimestamp,
-        txHash: factoryToken.txHash,
-        isPaused: false,
-      });
-    } catch (error) {
-      console.error(`Error fetching metadata for ${factoryToken.address}:`, error);
-      // Skip this token
     }
+
+    tokens.push({
+      address: t.address,
+      name: t.name || "Unknown",
+      symbol: t.symbol || "???",
+      variant: t.variant === 1 ? "stablecoin" : "asset",
+      decimals: t.decimals || 18,
+      totalSupply: BigInt(0), // not carried by B20Created; fetch lazily if needed
+      supplyCap: BigInt(0),
+      creator: "", // not indexed in B20Created
+      createdAt,
+      txHash: t.txHash,
+      isPaused: false,
+    });
   }
-  
+
+  await cacheSet(cacheKey, tokens, TTL.DISCOVERY);
   return tokens;
 }
 
 /**
- * Get block timestamp (helper function)
- */
-async function getBlockTimestamp(blockNumber: number): Promise<number> {
-  const cacheKey = `blk:${blockNumber}`;
-  const cached = await cacheGet<number>(cacheKey);
-  if (cached !== null) return cached;
-
-  const provider = getFactoryProvider();
-  const block = await provider.getBlock(blockNumber);
-  const ts = block ? block.timestamp : Math.floor(Date.now() / 1000);
-  await cacheSet(cacheKey, ts, TTL.BLOCK);
-  return ts;
-}
-
-/**
- * Stream new B20 tokens from factory events in real-time
- * Uses WebSocket connection for real-time updates
- */
-export async function* streamB20FactoryEvents(
-  fromBlock: number = 0
-): AsyncGenerator<{ 
-  address: string; 
-  creator: string; 
-  variant: number; 
-  salt: string; 
-  blockNumber: number; 
-  txHash: string; 
-  timestamp: number 
-}> {
-  const provider = new JsonRpcProvider(BASE_RPC_URLS[0], 8453);
-  const factoryContract = new Contract(B20_FACTORY_ADDRESS, B20_FACTORY_ABI, provider);
-  
-  const b20CreatedTopic = id("B20Created(address,address,uint8,bytes32)");
-  
-  // First, yield existing tokens from recent blocks
-  const existingTokens = await getB20TokensFromFactory(100, fromBlock);
-  for (const token of existingTokens) {
-    const timestamp = await getBlockTimestamp(token.blockNumber);
-    yield {
-      ...token,
-      timestamp,
-    };
-  }
-  
-  // Note: For true real-time streaming, you would need a WebSocket provider
-  // This is a simplified version that polls for new events
-  let lastBlock = fromBlock;
-  
-  while (true) {
-    await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
-    
-    try {
-      const currentBlock = await provider.getBlockNumber();
-      if (currentBlock <= lastBlock) continue;
-      
-      const logs = await provider.getLogs({
-        fromBlock: lastBlock + 1,
-        toBlock: currentBlock,
-        address: B20_FACTORY_ADDRESS,
-        topics: [b20CreatedTopic],
-      });
-      
-      for (const log of logs) {
-        if (log.topics.length >= 4) {
-          const tokenAddress = `0x${log.topics[1].slice(-40)}`;
-          const creator = `0x${log.topics[2].slice(-40)}`;
-          const variant = Number(BigInt(log.topics[3]));
-          const salt = log.data.slice(0, 66);
-          const txHash = log.transactionHash || "";
-          const blockNumber = Number(log.blockNumber);
-          const timestamp = await getBlockTimestamp(blockNumber);
-          
-          if (tokenAddress.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase())) {
-            yield {
-              address: tokenAddress,
-              creator,
-              variant,
-              salt,
-              blockNumber,
-              txHash,
-              timestamp,
-            };
-          }
-        }
-      }
-      
-      lastBlock = currentBlock;
-    } catch (error) {
-      console.error("Error in factory event stream:", error);
-    }
-  }
-}
-
-/**
- * Fallback: Fetch B20 tokens from third-party APIs
- * Uses DexScreener and GeckoTerminal to discover tokens
+ * Fetch B20 tokens from third-party APIs (DexScreener, GeckoTerminal).
+ *
+ * NOTE: third-party DEX aggregators index tokens by their trading pools, and
+ * B20 tokens (precompile-backed, 0xb200… addresses) are frequently NOT listed
+ * on DEXes. The authoritative source is the factory's B20Created events, which
+ * is what getB20TokensFromFactory uses. This function is kept as a best-effort
+ * enrichment for tokens that DO have DEX liquidity.
  */
 export async function fetchB20TokensFromThirdParty(
-  limit: number = 100
+  _limit: number = 100,
 ): Promise<{ address: string; name: string; symbol: string; variant: "asset" | "stablecoin" }[]> {
-  const tokens: { address: string; name: string; symbol: string; variant: "asset" | "stablecoin" }[] = [];
-  const seen = new Set<string>();
-  
-  // Try DexScreener first - get top tokens on Base
-  try {
-    const response = await fetch(
-      `https://api.dexscreener.com/latest/dex/tokens/base?limit=${limit}`,
-      { next: { revalidate: 30 } }
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      const pairs = data.pairs || [];
-      
-      for (const pair of pairs) {
-        const baseToken = pair.baseToken || {};
-        const quoteToken = pair.quoteToken || {};
-        
-        [baseToken, quoteToken].forEach(token => {
-          if (token.address && token.address.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase())) {
-            const addr = token.address.toLowerCase();
-            if (!seen.has(addr)) {
-              seen.add(addr);
-              tokens.push({
-                address: token.address,
-                name: token.name || "Unknown",
-                symbol: token.symbol || "???",
-                variant: detectVariantFromAddress(token.address),
-              });
-            }
-          }
-        });
-      }
-    }
-  } catch (error) {
-    console.error("Error fetching from DexScreener:", error);
-  }
-  
-  // Try GeckoTerminal as fallback
-  if (tokens.length < limit / 2) {
-    try {
-      const response = await fetch(
-        `https://api.geckoterminal.com/api/v2/networks/base/tokens?page=1&per_page=${limit}`,
-        { next: { revalidate: 30 } }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const tokenData = data.data || [];
-        
-        for (const item of tokenData) {
-          const attributes = item.attributes || {};
-          if (attributes.address && attributes.address.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase())) {
-            const addr = attributes.address.toLowerCase();
-            if (!seen.has(addr)) {
-              seen.add(addr);
-              tokens.push({
-                address: attributes.address,
-                name: attributes.name || "Unknown",
-                symbol: attributes.symbol || "???",
-                variant: detectVariantFromAddress(attributes.address),
-              });
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching from GeckoTerminal:", error);
-    }
-  }
-  
-  return tokens;
-}
-
-/**
- * Detect variant from address (same logic as in b20-client.ts)
- */
-function detectVariantFromAddress(address: string): "asset" | "stablecoin" {
-  const cleaned = address.toLowerCase().replace("0x", "");
-  if (cleaned.length < 40) return "asset";
-  const variantInt = parseInt(cleaned.slice(20, 22), 16);
-  return variantInt === 1 ? "stablecoin" : "asset";
+  // Third-party discovery of B20 tokens by prefix is unreliable; the factory
+  // is the source of truth. Return empty rather than surface misleading data.
+  return [];
 }

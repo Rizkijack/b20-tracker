@@ -2,23 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { B20Event, TokenMarketData } from "@/lib/types";
-import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/b20-client";
-import { decodeTransferEvent } from "@/lib/event-decoder";
+import { decodeB20Event } from "@/lib/event-decoder";
 
-// Market data refresh cadence for token detail page (more aggressive than list view)
 const MARKET_REFRESH_MS = 15_000;
 
-/**
- * Fetch market data for a single token via the server-side API route.
- * Best-effort: returns null on failure so UI can show "—" placeholders.
- */
-async function fetchMarketData(address: string): Promise<TokenMarketData | null> {
+async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(`/api/market?address=${address}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return null;
-    return (await res.json()) as TokenMarketData;
+    return (await res.json()) as T;
   } catch {
     return null;
   }
@@ -41,42 +33,57 @@ export function useTokenDetail(tokenAddress: string) {
     try {
       setLoading(true);
 
-      // Fetch metadata + market data in parallel
-      const [meta, market] = await Promise.all([
-        fetchTokenMetadata(tokenAddress),
-        fetchMarketData(tokenAddress),
+      const [meta, market, blockData] = await Promise.all([
+        fetchJson<{
+          name: string;
+          symbol: string;
+          decimals: number;
+          totalSupply: string;
+          currency?: string;
+        }>(`/api/metadata?address=${tokenAddress}`),
+        fetchJson<TokenMarketData>(`/api/market?address=${tokenAddress}`),
+        fetchJson<{ blockNumber: number }>("/api/block/current"),
       ]);
-      setMetadata(meta);
-      setMarketData(market);
 
-      // Fetch recent events (last 5000 blocks ≈ ~2.8 hours)
-      const currentBlock = await getCurrentBlockNumber();
-      const fromBlock = currentBlock - 5000;
-      const logs = await fetchTokenEvents(tokenAddress, fromBlock, currentBlock);
+      if (meta) {
+        setMetadata({ ...meta, totalSupply: BigInt(meta.totalSupply || "0") });
+      }
+      if (market) setMarketData(market);
 
-      const decoded: B20Event[] = [];
-      for (const log of logs) {
-        const event = decodeTransferEvent({
-          topics: log.topics,
-          data: log.data,
-          blockNumber: log.blockNumber,
-          txHash: log.txHash,
-          logIndex: log.logIndex,
-          address: tokenAddress,
-        });
-        if (event) {
-          try {
-            event.timestamp = await getBlockTimestamp(log.blockNumber);
-          } catch {
-            event.timestamp = 0;
+      const currentBlock = blockData?.blockNumber ?? 0;
+      if (currentBlock > 0) {
+        const fromBlock = currentBlock - 5000;
+        const logs = await fetchJson<{
+          topics: string[];
+          data: string;
+          blockNumber: number;
+          txHash: string;
+          logIndex: number;
+        }[]>(`/api/token-events?address=${tokenAddress}&fromBlock=${fromBlock}&toBlock=${currentBlock}`);
+
+        if (logs) {
+          const decoded: B20Event[] = [];
+          for (const log of logs) {
+            const event = decodeB20Event({
+              ...log,
+              address: tokenAddress,
+            });
+            if (event) {
+              try {
+                const tsData = await fetchJson<{ timestamp: number }>(
+                  `/api/block/timestamp?blockNumber=${log.blockNumber}`,
+                );
+                event.timestamp = tsData?.timestamp ?? 0;
+              } catch {
+                event.timestamp = 0;
+              }
+              decoded.push(event);
+            }
           }
-          decoded.push(event);
+          decoded.sort((a, b) => b.blockNumber - a.blockNumber);
+          setEvents(decoded.slice(0, 100));
         }
       }
-
-      // Sort by block number descending (newest first)
-      decoded.sort((a, b) => b.blockNumber - a.blockNumber);
-      setEvents(decoded.slice(0, 100)); // limit to 100 events
 
       setError(null);
     } catch (err) {
@@ -91,41 +98,38 @@ export function useTokenDetail(tokenAddress: string) {
     fetchDetail();
   }, [fetchDetail]);
 
-  // Poll for updates every 5s
+  // Poll for latest events every 5s
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        // Fetch only latest metadata
-        const meta = await fetchTokenMetadata(tokenAddress);
-        setMetadata(meta);
+        const blockData = await fetchJson<{ blockNumber: number }>("/api/block/current");
+        const currentBlock = blockData?.blockNumber ?? 0;
+        if (currentBlock === 0) return;
 
-        // Fetch latest events
-        const currentBlock = await getCurrentBlockNumber();
         const lastEventBlock = events.length > 0 ? events[0].blockNumber : currentBlock - 10;
-        const logs = await fetchTokenEvents(tokenAddress, lastEventBlock + 1, currentBlock);
+        const logs = await fetchJson<{
+          topics: string[];
+          data: string;
+          blockNumber: number;
+          txHash: string;
+          logIndex: number;
+        }[]>(`/api/token-events?address=${tokenAddress}&fromBlock=${lastEventBlock + 1}&toBlock=${currentBlock}`);
 
-        const newDecoded: B20Event[] = [];
-        for (const log of logs) {
-          const event = decodeTransferEvent({
-            topics: log.topics,
-            data: log.data,
-            blockNumber: log.blockNumber,
-            txHash: log.txHash,
-            logIndex: log.logIndex,
-            address: tokenAddress,
-          });
-          if (event) {
-            try {
-              event.timestamp = await getBlockTimestamp(log.blockNumber);
-            } catch {
-              event.timestamp = 0;
+        if (logs && logs.length > 0) {
+          const decoded: B20Event[] = [];
+          for (const log of logs) {
+            const event = decodeB20Event({ ...log, address: tokenAddress });
+            if (event) {
+              const tsData = await fetchJson<{ timestamp: number }>(
+                `/api/block/timestamp?blockNumber=${log.blockNumber}`,
+              );
+              event.timestamp = tsData?.timestamp ?? 0;
+              decoded.push(event);
             }
-            newDecoded.push(event);
           }
-        }
-
-        if (newDecoded.length > 0) {
-          setEvents((prev) => [...newDecoded.reverse(), ...prev].slice(0, 100));
+          if (decoded.length > 0) {
+            setEvents((prev) => [...decoded.reverse(), ...prev].slice(0, 100));
+          }
         }
       } catch {
         // ignore polling errors
@@ -135,16 +139,15 @@ export function useTokenDetail(tokenAddress: string) {
     return () => clearInterval(interval);
   }, [tokenAddress, events.length]);
 
-  // Poll MARKET DATA every 15s (separate cadence from metadata/events)
+  // Poll market data every 15s
   useEffect(() => {
     if (!tokenAddress) return;
 
     const refreshMarket = async () => {
-      const market = await fetchMarketData(tokenAddress);
+      const market = await fetchJson<TokenMarketData>(`/api/market?address=${tokenAddress}`);
       if (market) setMarketData(market);
     };
 
-    // Run once immediately, then on 15s cadence
     refreshMarket();
     const marketInterval = setInterval(refreshMarket, MARKET_REFRESH_MS);
     return () => clearInterval(marketInterval);

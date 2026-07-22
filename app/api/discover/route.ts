@@ -1,11 +1,28 @@
+// app/api/discover/route.ts
+// GET /api/discover?fromBlock=X&toBlock=Y
+// Returns B20 tokens created in the given block range by scanning
+// B20Created events emitted by the B20_FACTORY precompile.
+//
+// This is the canonical discovery path: the factory emits exactly one
+// B20Created event per token, so we filter logs by the factory address
+// (not by scanning every Transfer log on Base).
+
 import { NextRequest, NextResponse } from "next/server";
-import { id } from "ethers";
-import { getProvider, isB20Address } from "@/lib/b20-client";
+import { discoverB20Tokens } from "@/lib/b20-client";
 import { cacheGet, cacheSet, cacheKey, TTL } from "@/lib/rpc-cache";
 
 export const dynamic = "force-dynamic";
 export const preferredRegion = ["iad1"];
-const CHUNK_SIZE = 2000;
+
+interface DiscoveredToken {
+  address: string;
+  blockNumber: number;
+  txHash: string;
+  variant: number;
+  name: string;
+  symbol: string;
+  decimals: number;
+}
 
 export async function GET(request: NextRequest) {
   const fromBlock = parseInt(request.nextUrl.searchParams.get("fromBlock") || "");
@@ -16,39 +33,12 @@ export async function GET(request: NextRequest) {
   }
 
   const cache = cacheKey("discover", fromBlock, toBlock);
-  const cached = cacheGet<{ address: string; blockNumber: number; txHash: string }[]>(cache);
+  const cached = cacheGet<DiscoveredToken[]>(cache);
   if (cached) return NextResponse.json(cached);
 
   try {
-    const provider = getProvider();
-    const transferTopic = id("Transfer(address,address,uint256)");
-    const tokens: { address: string; blockNumber: number; txHash: string }[] = [];
-    const seen = new Set<string>();
-
-    for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
-      const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
-      try {
-        const logs = await provider.getLogs({
-          fromBlock: start,
-          toBlock: end,
-          topics: [transferTopic],
-        });
-
-        for (const log of logs) {
-          const addr = log.address.toLowerCase();
-          if (isB20Address(addr) && !seen.has(addr)) {
-            seen.add(addr);
-            tokens.push({
-              address: log.address,
-              blockNumber: Number(log.blockNumber),
-              txHash: log.transactionHash ?? "",
-            });
-          }
-        }
-      } catch {
-        // skip chunk on error
-      }
-    }
+    // discoverB20Tokens now scans the factory's B20Created events directly.
+    const tokens = await discoverB20Tokens(fromBlock, toBlock);
 
     cacheSet(cache, tokens, TTL.TOKEN_DISCOVERY);
     return NextResponse.json(tokens);

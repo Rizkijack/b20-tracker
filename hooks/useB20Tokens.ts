@@ -144,6 +144,8 @@ export function useB20Tokens() {
 
   // Periodically refresh MARKET DATA only (price/mcap/volume) for tokens that
   // already have liquidity, without re-running full discovery.
+  // Uses /api/market/batch to fetch fresh prices server-side (DexScreener +
+  // GeckoTerminal — both free, no key), much lighter than re-scanning factory events.
   const tokensRef = useRef<B20Token[]>([]);
   useEffect(() => {
     tokensRef.current = tokens;
@@ -154,8 +156,26 @@ export function useB20Tokens() {
 
     const refreshMarket = async () => {
       try {
-        // Re-discover to pull fresh prices; the server caches aggressively.
-        await discoverTokens();
+        const current = tokensRef.current;
+        const withLiquidity = current
+          .filter((t) => t.marketData?.priceUsd != null)
+          .slice(0, 30)
+          .map((t) => t.address);
+        if (withLiquidity.length === 0) return;
+
+        const res = await fetch(
+          `/api/market/batch?addresses=${withLiquidity.join(",")}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const batch = (await res.json()) as Record<string, TokenMarketData>;
+
+        setTokens((prev) =>
+          prev.map((t) => {
+            const md = batch[t.address.toLowerCase()];
+            return md ? { ...t, marketData: md } : t;
+          }),
+        );
       } catch {
         // Market refresh is best-effort
       }

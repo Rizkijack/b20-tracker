@@ -178,6 +178,23 @@ export async function discoverB20TokensFromFactory(
 }
 
 /**
+ * Get the current Base mainnet block number, with provider rotation + retry
+ * and a short cache so a flood of concurrent requests coalesces into one RPC
+ * call. This is the single, safe entry point for block-height reads — every
+ * other module should call this (or /api/block/current) rather than hitting
+ * the RPC directly.
+ */
+export async function getCurrentBlockNumber(): Promise<number> {
+  const cacheK = "b20:block:latest";
+  const cached = await cacheGet<number>(cacheK);
+  if (cached !== null) return cached;
+
+  const blockNumber = await rpcCall((p) => p.getBlockNumber());
+  await cacheSet(cacheK, blockNumber, TTL.BLOCK);
+  return blockNumber;
+}
+
+/**
  * Discover the most recent B20 tokens by scanning the last `blockWindow`
  * blocks (default ~50k ≈ 1.2 days). Caps the scan at MAX_SCAN_BLOCKS so a
  * misconfigured window can't trigger thousands of sequential RPC calls.
@@ -187,7 +204,7 @@ const MAX_SCAN_BLOCKS = 100_000;
 export async function discoverRecentB20Tokens(
   blockWindow = 50_000,
 ): Promise<{ tokens: DiscoveredB20Token[]; currentBlock: number; source: B20DataSource }> {
-  const currentBlock = await rpcCall((p) => p.getBlockNumber());
+  const currentBlock = await getCurrentBlockNumber();
   const window = Math.min(Math.max(blockWindow, 1), MAX_SCAN_BLOCKS);
   const fromBlock = Math.max(0, currentBlock - window);
   const tokens = await discoverB20TokensFromFactory(fromBlock, currentBlock);

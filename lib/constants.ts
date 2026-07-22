@@ -5,8 +5,15 @@ export const B20_FACTORY_ADDRESS = "0xB20f000000000000000000000000000000000000" 
 export const POLICY_REGISTRY_ADDRESS = "0x8453000000000000000000000000000000000002" as const;
 
 // ─── B20 Address Prefix ──────────────────────────────────────────────────────
-// All B20 token addresses are deterministically derived and share this prefix
-export const B20_ADDRESS_PREFIX = "0xB20f";
+// NOTE: `0xB20f` is the B20_FACTORY precompile address; actual B20 *token*
+// addresses are deterministically derived and start with `0xb200` (ASSET)
+// or `0xb201` (STABLECOIN). The variant byte sits at hex position [20:22]
+// (byte 10). This was previously `0xB20f`, which is the factory — that is why
+// token discovery always returned empty (no token ever matches the factory
+// address as a prefix). Verified live against the factory precompile on
+// Base mainnet: getB20Address(0, sender, salt) -> 0xb200…,
+// getB20Address(1, sender, salt) -> 0xb201…
+export const B20_ADDRESS_PREFIX = "0xb200";
 
 // ─── Base Mainnet RPC (server-side) ──────────────────────────────────────
 // Server code MUST read BASE_RPC_URL (never exposed to the browser).
@@ -70,6 +77,12 @@ export const B20RoleLabels: Record<string, string> = {
 import { id } from "ethers";
 
 export const EVENT_TOPICS = {
+  // B20 factory creation event (emitted by the B20_FACTORY precompile when a
+  // new B20 token is created). Canonical signature per base-std IB20Factory.sol:
+  //   event B20Created(address indexed token, uint8 indexed variant, string name,
+  //                    string symbol, uint8 decimals, bytes variantEventParams);
+  B20_CREATED: id("B20Created(address,uint8,string,string,uint8,bytes)"),
+
   // Standard ERC-20 / B20 transfer (mint = from(0x0), burn = to(0x0))
   TRANSFER: id("Transfer(address,address,uint256)"),
   APPROVAL: id("Approval(address,address,uint256)"),
@@ -101,6 +114,7 @@ export const EVENT_TOPICS = {
 
 // Reverse lookup: topic -> canonical signature, used by the event decoder.
 export const EVENT_SIGNATURES: Record<string, string> = {
+  [EVENT_TOPICS.B20_CREATED]: "B20Created(address,uint8,string,string,uint8,bytes)",
   [EVENT_TOPICS.TRANSFER]: "Transfer(address,address,uint256)",
   [EVENT_TOPICS.MEMO]: "Memo(address,bytes32)",
   [EVENT_TOPICS.ROLE_GRANTED]: "RoleGranted(bytes32,address,address)",
