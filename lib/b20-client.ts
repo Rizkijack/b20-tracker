@@ -50,8 +50,10 @@ export async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promis
 }
 
 // ─── Helper: Check if address is a B20 token ───────────────────────────────
+// ASSET = 0xb200…, STABLECOIN = 0xb201…. Do not match the factory (0xb20f…).
 export function isB20Address(address: string): boolean {
-  return address.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase());
+  const a = address.toLowerCase();
+  return a.startsWith("0xb200") || a.startsWith("0xb201");
 }
 
 // ─── Helper: Truncate address for display ──────────────────────────────────

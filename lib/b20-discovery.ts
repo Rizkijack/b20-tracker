@@ -25,6 +25,12 @@
 import { JsonRpcProvider, Contract, id, AbiCoder } from "ethers";
 import { cacheGet, cacheSet, TTL } from "./server-cache";
 import {
+  cacheGetSync,
+  cacheSetSync,
+  cacheKey,
+  TTL as RpcTTL,
+} from "./rpc-cache";
+import {
   B20_FACTORY_ADDRESS,
   B20_ADDRESS_PREFIX,
   BASE_RPC_URLS,
@@ -43,7 +49,7 @@ function nextProvider(): JsonRpcProvider {
   return p;
 }
 
-async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promise<T> {
+export async function rpcCall<T>(fn: (p: JsonRpcProvider) => Promise<T>): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < providers.length * 2; attempt++) {
     const p = nextProvider();
@@ -89,7 +95,8 @@ const B20_CREATED_TOPIC = id(
 );
 
 function isB20Address(address: string): boolean {
-  return address.toLowerCase().startsWith(B20_ADDRESS_PREFIX.toLowerCase());
+  const a = address.toLowerCase();
+  return a.startsWith("0xb200") || a.startsWith("0xb201");
 }
 
 function detectVariant(address: string): "asset" | "stablecoin" {
@@ -183,14 +190,21 @@ export async function discoverB20TokensFromFactory(
  * call. This is the single, safe entry point for block-height reads — every
  * other module should call this (or /api/block/current) rather than hitting
  * the RPC directly.
+ *
+ * Uses the sync in-memory cache shared with /api/block/current so that server
+ * code and API routes share the same cached value instead of each hitting the
+ * RPC independently.
  */
 export async function getCurrentBlockNumber(): Promise<number> {
-  const cacheK = "b20:block:latest";
-  const cached = await cacheGet<number>(cacheK);
-  if (cached !== null) return cached;
+  // Must match /api/block/current so both paths share the same in-memory entry.
+  const cacheK = cacheKey("block", "current");
+  const cached = cacheGetSync<number>(cacheK);
+  if (cached !== undefined) return cached;
 
   const blockNumber = await rpcCall((p) => p.getBlockNumber());
-  await cacheSet(cacheK, blockNumber, TTL.BLOCK);
+  // Share the same 2s TTL + key as /api/block/current so server code and the
+  // API route coalesce into a single RPC call under load.
+  cacheSetSync(cacheK, blockNumber, RpcTTL.BLOCK_NUMBER);
   return blockNumber;
 }
 

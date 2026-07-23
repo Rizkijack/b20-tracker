@@ -16,9 +16,9 @@ export default function DashboardPage() {
   const { tokens, loading: tokensLoading, error: tokensError, currentBlock: tokenBlock, dataSource } = useB20Tokens();
   const { events, loading: eventsLoading, error: eventsError, currentBlock: eventBlock } = useB20Events();
 
-  const { stats, blockHeight } = useStats(tokens);
-
   const latestBlock = Math.max(tokenBlock, eventBlock);
+
+  const { stats, blockHeight } = useStats(tokens, latestBlock);
 
   // Filter tokens based on selected mode
   const filteredTokens = filterMode === "b20-only"
