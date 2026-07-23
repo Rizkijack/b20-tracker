@@ -78,8 +78,9 @@ const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
   
   // Security headers
   securityHeaders: {
-    // Prevent clickjacking
-    "X-Frame-Options": "DENY",
+    // Prevent clickjacking of our own pages (SAMEORIGIN, not DENY,
+    // so our embeds still work). Does not restrict which iframes WE embed.
+    "X-Frame-Options": "SAMEORIGIN",
     
     // Prevent MIME type sniffing
     "X-Content-Type-Options": "nosniff",
@@ -101,7 +102,7 @@ const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
       "img-src 'self' data: https:; " +
       "font-src 'self'; " +
       "connect-src 'self' https://*.base.org https://api.dexscreener.com https://api.geckoterminal.com; " +
-      "frame-src 'none'; " +
+      "frame-src 'self' https://dexscreener.com https://www.dexscreener.com; " +
       "object-src 'none'; " +
       "base-uri 'self'; " +
       "form-action 'self';",
@@ -110,7 +111,9 @@ const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
     
     // Cross-Origin Embedder Policy
-    "Cross-Origin-Embedder-Policy": "require-corp",
+    // credentialless allows cross-origin iframes (e.g. DexScreener chart embed)
+    // to load without requiring the third party to send CORP headers.
+    "Cross-Origin-Embedder-Policy": "credentialless",
     
     // Cross-Origin Opener Policy
     "Cross-Origin-Opener-Policy": "same-origin",

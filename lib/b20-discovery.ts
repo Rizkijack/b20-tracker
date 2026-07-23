@@ -313,6 +313,7 @@ export async function fetchDexScreenerBatch(
         liquidityUsd: pair.liquidity?.usd ?? null,
         liquidityChange24h: null,
         topPairAddress: pair.pairAddress ?? null,
+        dexScreenerPairAddress: pair.pairAddress ?? null,
         dexUrl: pair.url ?? null,
         txns24h: { buys: txns24h.buys ?? 0, sells: txns24h.sells ?? 0 },
         holders: null,
@@ -390,6 +391,7 @@ export async function fetchGeckoTerminal(
       liquidityUsd: liq,
       liquidityChange24h: null,
       topPairAddress: null,
+      dexScreenerPairAddress: null, // GT pool address is not a DexScreener pair
       dexUrl: `https://www.geckoterminal.com/${GECKO_CHAIN_SLUG}/tokens/${addr}`,
       txns24h: null,
       holders: null,
@@ -420,6 +422,7 @@ function mergeGeckoInto(
     liquidityUsd: pick(base.liquidityUsd, geo.liquidityUsd),
     liquidityChange24h: pick(base.liquidityChange24h, geo.liquidityChange24h),
     topPairAddress: pick(base.topPairAddress, geo.topPairAddress),
+    dexScreenerPairAddress: pick(base.dexScreenerPairAddress, geo.dexScreenerPairAddress),
     dexUrl: pick(base.dexUrl, geo.dexUrl),
     txns24h: pick(base.txns24h, geo.txns24h),
     holders: pick(base.holders, geo.holders),

@@ -11,7 +11,7 @@ import {
   getEventDescription,
 } from "@/lib/event-decoder";
 import { EXPLORER_URL } from "@/lib/constants";
-import PriceChart from "@/components/PriceChart";
+import ChartSection from "@/components/ChartSection";
 import PriceAlerts from "@/components/PriceAlerts";
 
 export default function TokenDetailPage() {
@@ -246,9 +246,13 @@ export default function TokenDetailPage() {
               </div>
             </div>
 
-            {/* Historical Price Chart */}
+            {/* Historical Price Chart + full-screen DexScreener frame */}
             <div className="mt-6">
-              <PriceChart address={address} />
+              <ChartSection
+                address={address}
+                symbol={metadata?.symbol}
+                pairAddress={marketData?.dexScreenerPairAddress ?? null}
+              />
             </div>
 
             {/* Price Alerts */}

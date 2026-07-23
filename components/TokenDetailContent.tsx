@@ -13,7 +13,7 @@ import {
 } from "@/lib/event-decoder";
 import { EXPLORER_URL } from "@/lib/constants";
 import { fetchTokenMetadata, fetchTokenEvents, getBlockTimestamp, getCurrentBlockNumber } from "@/lib/api-client";
-import PriceChart from "@/components/PriceChart";
+import ChartSection from "@/components/ChartSection";
 
 // Internal type for client-side metadata (totalSupply as bigint)
 interface TokenMeta {
@@ -489,7 +489,10 @@ export default function TokenDetailContent({
                     <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Stablecoin price is pegged to {metadata.currency}</p>
                   </div>
                 ) : (
-                  <PriceChart address={address} />
+                  <ChartSection
+                    address={address}
+                    symbol={metadata?.symbol}
+                  />
                 )}
               </div>
             )}

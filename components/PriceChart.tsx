@@ -13,6 +13,12 @@ interface OhlcvCandle {
 
 interface PriceChartProps {
   address: string;
+  /**
+   * When true, the "Price Chart" title is hidden (the % change badge and
+   * timeframe controls remain). Used when PriceChart is embedded inside a
+   * wrapper that already provides a title — e.g. ChartSection.
+   */
+  hideHeader?: boolean;
 }
 
 type Timeframe = "day" | "hour" | "minute";
@@ -29,7 +35,7 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
  *
  * Data source: /api/ohlcv (GeckoTerminal pools)
  */
-export default function PriceChart({ address }: PriceChartProps) {
+export default function PriceChart({ address, hideHeader }: PriceChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>("day");
   const [candles, setCandles] = useState<OhlcvCandle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,10 +167,12 @@ export default function PriceChart({ address }: PriceChartProps) {
   }, [candles]);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+    <div className={hideHeader ? "" : "rounded-xl border border-white/10 bg-white/[0.03] p-5"}>
       <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-white">Price Chart</h2>
+          {!hideHeader && (
+            <h2 className="text-sm font-semibold text-white">Price Chart</h2>
+          )}
           {chart && (
             <span
               className={`text-xs font-semibold tabular-nums ${

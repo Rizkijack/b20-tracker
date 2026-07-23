@@ -12,6 +12,9 @@ export interface TokenMarketData {
   liquidityChange24h: number | null;
   topPairAddress: string | null; // primary DEX pair for linking
   dexUrl: string | null; // direct link to DexScreener pair
+  // Pair address resolved specifically from DexScreener (used for chart embeds).
+  // topPairAddress may be a GeckoTerminal pool address, which won't embed in DexScreener.
+  dexScreenerPairAddress: string | null;
   txns24h: { buys: number; sells: number } | null;
   holders: number | null;
   sourcePriority: MarketDataSource[]; // which sources returned data

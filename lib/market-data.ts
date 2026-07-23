@@ -126,6 +126,7 @@ async function _fetchDexScreener(
       liquidityUsd: top.liquidity?.usd ?? null,
       liquidityChange24h: null,
       topPairAddress: top.pairAddress ?? null,
+      dexScreenerPairAddress: top.pairAddress ?? null,
       dexUrl: top.url ?? null,
       txns24h: { buys: txns24h.buys, sells: txns24h.sells },
       holders: null,
@@ -213,6 +214,7 @@ async function _fetchGeckoTerminal(
       liquidityUsd: poolLiquidity ?? (attr.total_reserve_in_usd ? parseFloat(attr.total_reserve_in_usd) : null),
       liquidityChange24h: null,
       topPairAddress: poolAddr,
+      dexScreenerPairAddress: null, // GT pool address is not a DexScreener pair
       dexUrl: poolAddr
         ? `https://www.geckoterminal.com/${BASE_CHAIN_SLUG}/pools/${poolAddr}`
         : null,
@@ -272,6 +274,7 @@ async function _fetchBirdeye(
       liquidityUsd: d.liquidityUSD ?? null,
       liquidityChange24h: null,
       topPairAddress: null,
+      dexScreenerPairAddress: null,
       dexUrl: `https://birdeye.so/token/${address}?chain=base`,
       txns24h: null,
       holders: d.uniqueWallet24h ?? null,
@@ -346,6 +349,7 @@ async function _fetchCoinGecko(
       liquidityUsd: null,
       liquidityChange24h: null,
       topPairAddress: null,
+      dexScreenerPairAddress: null,
       dexUrl: bestTicker?.trade_url ?? null,
       txns24h: null,
       holders: null,
@@ -416,6 +420,7 @@ async function _fetchCoinMarketCap(
       liquidityUsd: null,
       liquidityChange24h: null,
       topPairAddress: null,
+      dexScreenerPairAddress: null,
       dexUrl: null,
       txns24h: null,
       holders: null,
@@ -475,6 +480,7 @@ function _mergePartials(
     liquidityUsd: firstValue((p) => p.liquidityUsd),
     liquidityChange24h: firstValue((p) => p.liquidityChange24h),
     topPairAddress: firstValue((p) => p.topPairAddress),
+    dexScreenerPairAddress: firstValue((p) => p.dexScreenerPairAddress),
     dexUrl: firstValue((p) => p.dexUrl),
     txns24h: firstValue((p) => p.txns24h),
     holders: firstValue((p) => p.holders),
